@@ -96,7 +96,7 @@ export function generateCalendarContext(scale) {
 export function formatTick(tick) {
   const date = parseDate(tick.date);
   if (tick.mode === "day") return String(date.getDate());
-  if (tick.mode === "week") return `S${Math.ceil(date.getDate() / 7)}`;
+  if (tick.mode === "week") return `S${getIsoWeek(date)}`;
   if (tick.mode === "quarter") return `T${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`;
   return new Intl.DateTimeFormat("fr-FR", { month: "short", year: "numeric" }).format(date);
 }

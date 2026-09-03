@@ -4,7 +4,8 @@ BETA d'une frise chronologique interactive, pensée pour la planification visuel
 
 ## Fonctionnalites de la BETA
 
-- Plusieurs timelines avec persistance locale dans le navigateur.
+- Mire d'acces avec Google via Supabase Auth ou mode bac a sable local.
+- Plusieurs timelines, sauvegardees dans Supabase apres connexion ou dans le navigateur en bac a sable.
 - Axe temporel horizontal, zoom ($1$ a $34$ pixels par jour), graduations adaptees et retour a aujourd'hui.
 - Periodes deplacables et redimensionnables a la souris.
 - Jalons ancres strictement a leur date, avec repartition verticale automatique en cas de chevauchement.
@@ -16,9 +17,11 @@ BETA d'une frise chronologique interactive, pensée pour la planification visuel
 ## Architecture
 
 - `src/engine/`: logique pure de dates, echelle, graduations, recurrences et placement des jalons.
-- `src/app.js`: orchestration de l'interface et interactions DOM.
-- `src/storage.js`: persistance locale de la BETA. Elle constitue un cache de travail simple avant le branchement du client Supabase authentifie.
-- `supabase/schema.sql`: schema relationnel securise a executer une fois dans une base vide.
+- `supabase/auth/`: modules Google OAuth existants, reutilises par Timeline.
+- `src/app.js`: mire d'acces, orchestration de l'interface et interactions DOM.
+- `src/repositories.js`: depots local et Supabase, utilises par le meme editeur.
+- `src/storage.js`: secours local lorsqu'aucune configuration Supabase n'est disponible.
+- `supabase/schema.sql`: schema relationnel `tl_*` securise a executer une fois dans une base vide.
 
 ## Lancer localement
 
@@ -32,13 +35,14 @@ Ouvrez ensuite `http://localhost:4173`.
 
 ## Supabase
 
-1. Creez un projet Supabase puis executez [le schema](supabase/schema.sql) dans le SQL Editor.
-2. Activez un fournisseur d'authentification dans Supabase. Les politiques SQL limitent l'ecriture au proprietaire connecte.
-3. Copiez `src/config.example.js` vers `src/config.js` et renseignez l'URL du projet et sa cle `anon` publique uniquement.
+1. Dans le projet Supabase existant de Timekeeper, executez [le schema](supabase/schema.sql) dans le SQL Editor. Il cree uniquement les tables Timeline `tl_*`.
+2. Dans **Authentication > Providers > Google**, activez Google et renseignez le Client ID et le Client Secret de votre projet OAuth Google.
+3. Dans **Authentication > URL Configuration**, ajoutez `http://127.0.0.1:5500/` et l'URL GitHub Pages de production aux **Redirect URLs**.
+4. Renseignez [src/config.js](src/config.js) avec l'URL du projet et sa cle `anon` publique. `supabaseRedirectTo` est calculee a partir de l'URL courante, sans adresse de production codee en dur.
 
-`src/config.js` est ignore par Git. Ne mettez jamais de `service_role` ni une cle secrete dans ce projet frontend.
+`src/config.js` est publie avec l'application car la cle `anon` est une cle publique. Ne mettez jamais de `service_role` ni une cle secrete dans ce projet frontend.
 
-La persistance locale est active par defaut afin que la BETA fonctionne sans configuration. Le modele SQL et les identifiants UUID des elements permettent d'ajouter ensuite une synchronisation Supabase sans modifier le moteur de rendu.
+Sans session Google, l'utilisateur choisit explicitement le bac a sable. Avec Supabase configure, les frises bac a sable sont stockees dans la base sans `user_id`, partagees et modifiables par tous les visiteurs. Elles ne sont jamais rattachees a un compte. Apres connexion Google, les donnees privees du compte sont chargees et sauvegardees exclusivement dans Supabase. Le transfert d'une frise bac a sable vers un compte n'est pas encore implemente.
 
 ## Deployer sur GitHub Pages
 
@@ -46,5 +50,6 @@ La persistance locale est active par defaut afin que la BETA fonctionne sans con
 2. Dans **Settings > Pages**, choisissez **Deploy from a branch**.
 3. Selectionnez la branche `main` et le dossier `/(root)`.
 4. Validez: GitHub Pages servira directement `index.html`.
+5. Ajoutez l'URL Pages finale a la configuration OAuth Google et remplacez `supabaseRedirectTo` dans la configuration publiee par cette URL.
 
 Pour un partage en lecture seule dans cette BETA, activez **Partager** puis utilisez le lien genere avec le parametre `?view=<public_token>`. Le mode n'affiche aucune commande d'edition. Une route propre `/view/:public_token` pourra etre introduite avec un routeur SPA et une regle de reecriture Pages lorsque le partage public passera en phase active.
