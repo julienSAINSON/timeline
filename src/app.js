@@ -4,7 +4,7 @@ import { layoutMilestones, positionMilestoneLanes } from "./engine/milestone-lay
 import { layoutPeriods } from "./engine/period-layout.js";
 import { generateOccurrences } from "./engine/recurrence.js";
 import { createScale, dateToX, formatTick, generateCalendarContext, generateTicks, xToDate } from "./engine/timeline-scale.js";
-import { createTimeline, deleteItem, loadStore, saveItem } from "./storage.js";
+import { createTimeline, deleteItem, loadStore, saveItem, saveStore } from "./storage.js";
 
 const app = document.querySelector("#app");
 const modalRoot = document.querySelector("#modal-root");
@@ -73,7 +73,7 @@ function render() {
   app.innerHTML = `<div class="shell">
     ${state.readOnly ? "" : `<aside class="sidebar"><div><div class="brand">time<span>line</span></div><nav><div class="sidebar-label">Mes frises</div><div class="timeline-list">${state.store.timelines.map((entry) => `<button class="timeline-choice ${entry.id === timeline.id ? "active" : ""}" data-timeline="${entry.id}">${safe(entry.name)}</button>`).join("")}</div></nav></div><button class="new-timeline" data-action="new-timeline">+ Nouvelle frise</button></aside>`}
     <section class="workspace"><header class="topbar"><div><div class="eyebrow">${state.readOnly ? "Consultation" : "Editeur"}</div><h1>${safe(timeline.name)}</h1><div class="range">${formatHumanDate(timeline.start_date)} - ${formatHumanDate(timeline.end_date)}</div></div>
-    <div class="controls"><button class="icon-btn" data-action="zoom-out" title="Dezoomer">-</button><div class="zoom-readout">${state.zoom}px/j</div><button class="icon-btn" data-action="zoom-in" title="Zoomer">+</button><button class="command-btn" data-action="today">Aujourd'hui</button>${state.readOnly ? "" : `<button class="command-btn" data-action="share">Partager</button>`}</div></header>
+    <div class="controls"><button class="icon-btn" data-action="zoom-out" title="Dezoomer">-</button><div class="zoom-readout">${state.zoom}px/j</div><button class="icon-btn" data-action="zoom-in" title="Zoomer">+</button><button class="command-btn" data-action="today">Aujourd'hui</button>${state.readOnly ? "" : `<button class="command-btn primary" data-action="save-timeline">Sauvegarder</button><button class="command-btn" data-action="share">Partager</button>`}</div></header>
     <div class="timeline-frame" id="timeline-frame"><div class="timeline-canvas" id="timeline-canvas" style="width:${scale.width}px;height:${canvasHeight}px;--axis-top:${axisTop}px;--period-top:${periodTop}px;--annotation-top:${annotationTop}px">
       <aside class="hover-details" id="hover-details" aria-live="polite"></aside>
       ${generateTicks(scale).map((tick) => `<div class="tick" style="left:${tick.x}px"><span class="tick-label ${tick.isWeekend ? "weekend" : ""}">${formatTick(tick)}</span></div>`).join("")}
@@ -177,6 +177,7 @@ document.addEventListener("click", (event) => {
   if (action === "zoom-in") { state.zoom = Math.min(34, state.zoom + 2); render(); }
   if (action === "zoom-out") { state.zoom = Math.max(1, state.zoom - 2); render(); }
   if (action === "today") scrollToToday();
+  if (action === "save-timeline") { saveStore(state.store); event.target.textContent = "Sauvegarde effectuee"; event.target.disabled = true; }
   if (action === "new-timeline") openModal("Creer une timeline", timelineForm());
   if (action === "close-modal") closeModal();
   if (action === "delete-item") { deleteItem(state.store, event.target.dataset.item); closeModal(); render(); }
