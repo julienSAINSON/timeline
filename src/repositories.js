@@ -26,7 +26,7 @@ export class LocalTimelineRepository {
   async loadItems(timelineId) { return loadStore().items.filter(({ timeline_id }) => timeline_id === timelineId); }
   async createTimeline(store, data) { const timeline = { id: crypto.randomUUID(), public_token: crypto.randomUUID(), is_public: false, ...data }; store.timelines.push(timeline); return timeline; }
   async updateTimeline() {}
-  async deleteTimeline(store, timelineId) { store.timelines = store.timelines.filter(({ id }) => id !== timelineId); store.items = store.items.filter(({ timeline_id }) => timeline_id !== timelineId); }
+  async deleteTimeline(store, timelineId) { store.timelines = store.timelines.filter(({ id }) => id !== timelineId); store.items = store.items.filter(({ timeline_id }) => timeline_id !== timelineId); store.recurrences = store.recurrences.filter(({ timeline_id }) => timeline_id !== timelineId); }
   async createItem(store, item) { store.items.push(item); }
   async updateItem(store, item) { const index = store.items.findIndex(({ id }) => id === item.id); store.items[index] = item; }
   async deleteItem(store, itemId) { store.items = store.items.filter(({ id }) => id !== itemId); }
@@ -50,7 +50,13 @@ export class SupabaseTimelineRepository {
   async loadItems(timelineId) { return (await this.loadStore()).items.filter((item) => item.timeline_id === timelineId); }
   async createTimeline(store, data) { const timeline = { id: crypto.randomUUID(), public_token: crypto.randomUUID(), is_public: false, ...data }; store.timelines.push(timeline); return timeline; }
   async updateTimeline() {}
-  async deleteTimeline(store, timelineId) { store.timelines = store.timelines.filter(({ id }) => id !== timelineId); store.items = store.items.filter(({ timeline_id }) => timeline_id !== timelineId); }
+  async deleteTimeline(store, timelineId) {
+    const { error } = await this.client.from("tl_timelines").delete().eq("id", timelineId);
+    if (error) throw new Error(error.message);
+    store.timelines = store.timelines.filter(({ id }) => id !== timelineId);
+    store.items = store.items.filter(({ timeline_id }) => timeline_id !== timelineId);
+    store.recurrences = store.recurrences.filter(({ timeline_id }) => timeline_id !== timelineId);
+  }
   async createItem(store, item) { store.items.push(item); }
   async updateItem(store, item) { const index = store.items.findIndex(({ id }) => id === item.id); store.items[index] = item; }
   async deleteItem(store, itemId) { store.items = store.items.filter(({ id }) => id !== itemId); }

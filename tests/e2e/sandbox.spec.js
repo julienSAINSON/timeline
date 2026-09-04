@@ -33,6 +33,21 @@ test("cree une periode, la sauvegarde puis la retrouve apres rechargement", asyn
   await expect(page.getByText("Periode de regression", { exact: true })).toHaveCount(2);
 });
 
+test("supprime une frise apres confirmation", async ({ page }) => {
+  await startSandbox(page);
+  await page.getByRole("button", { name: "+ Nouvelle frise" }).click();
+  await page.locator('input[name="name"]').fill("Frise a supprimer");
+  await page.locator('input[name="start_date"]').fill("2026-01-01");
+  await page.locator('input[name="end_date"]').fill("2026-01-31");
+  await page.locator('form[data-form="timeline"]').evaluate((form) => form.requestSubmit());
+  await expect(page.getByRole("heading", { name: "Frise a supprimer" })).toBeVisible();
+  await page.getByRole("button", { name: "Supprimer la frise" }).click();
+  await expect(page.getByRole("heading", { name: "Supprimer la frise" })).toBeVisible();
+  await page.getByRole("button", { name: "Supprimer", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Roadmap Produit 2026" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Frise a supprimer", exact: true })).toHaveCount(0);
+});
+
 test("respecte les bornes de zoom et conserve un affichage utilisable", async ({ page }) => {
   await startSandbox(page);
   const zoomOut = page.getByRole("button", { name: "Dezoomer" });
