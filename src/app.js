@@ -12,6 +12,16 @@ const modalRoot = document.querySelector("#modal-root");
 const state = { store: { timelines: [], items: [], recurrences: [] }, activeTimelineId: null, zoom: 6, contextDate: null, readOnly: false, selectedItemId: null, skipNextItemClick: false, mode: null, user: null, isDirty: false };
 const RECENT_COLORS_KEY = "timeline-recent-colors";
 const ACCESS_MODE_KEY = "timeline-access-mode";
+const THEME_KEY = "timeline-theme";
+const THEMES = {
+  atelier: "Atelier Clair",
+  tableau: "Tableau Graphique",
+  nuit: "Nuit Studio",
+  jardin: "Jardin Calme",
+  mono: "Mono",
+  sketchy: "Sketchy",
+  sunlust: "Sunlust"
+};
 let lastItemClick = { id: null, time: 0 };
 const params = new URLSearchParams(location.search);
 const publicToken = params.get("view");
@@ -71,6 +81,8 @@ function minimumZoom(timeline = activeTimeline()) { return timeline ? Math.max(1
 function fitTimelineToViewport() { state.zoom = minimumZoom(); }
 function currentScale(timeline = activeTimeline()) { return createScale(timeline, state.zoom); }
 function items() { return state.store.items.filter(({ timeline_id }) => timeline_id === state.activeTimelineId); }
+function currentTheme() { return THEMES[localStorage.getItem(THEME_KEY)] ? localStorage.getItem(THEME_KEY) : "atelier"; }
+function themeOptions() { return Object.entries(THEMES).map(([id, label]) => `<option value="${id}" ${id === currentTheme() ? "selected" : ""}>${label}</option>`).join(""); }
 function renderFittedTimeline() {
   render();
   fitTimelineToViewport();
@@ -153,13 +165,15 @@ function render() {
   const milestones = layout.milestones.map((item) => ({ ...item, cardTop: item.cardTop + verticalOffset }));
   const todayX = dateToX(new Date(), scale);
   const calendarContext = generateCalendarContext(scale);
+  const ticks = generateTicks(scale);
+  const calendarMode = ticks[0]?.mode || "quarter";
   const canvasHeight = fullyZoomedOutLayout.contentBottom - fullyZoomedOutLayout.contentTop + 32;
-  app.innerHTML = `<div class="shell ${state.readOnly ? "public-view" : ""}">
+  app.innerHTML = `<div class="shell theme-${currentTheme()} ${state.readOnly ? "public-view" : ""}">
     ${state.readOnly ? "" : `<aside class="sidebar"><div>${state.mode === "sandbox" ? `<button class="brand" data-action="return-access" title="Revenir a l'accueil">time<span>line</span></button>` : `<div class="brand">time<span>line</span></div>`}<nav><div class="sidebar-label">Mes frises</div><div class="timeline-list">${state.store.timelines.map((entry) => `<button class="timeline-choice ${entry.id === timeline.id ? "active" : ""}" data-timeline="${entry.id}">${safe(entry.name)}</button>`).join("")}</div></nav></div><button class="new-timeline" data-action="new-timeline">+ Nouvelle frise</button></aside>`}
-    <section class="workspace">${state.readOnly ? "" : `${state.mode === "sandbox" ? `<aside class="sandbox-banner"><span>&#9883; Mode bac a sable</span><span>Cette frise est partagee et modifiable par tous. Elle n'est pas enregistree dans votre compte.</span><button data-action="return-access">Se connecter pour sauvegarder</button></aside>` : ""}<header class="topbar"><div><div class="eyebrow">Editeur</div><div class="timeline-title"><h1>${safe(timeline.name)}</h1><button class="icon-btn edit-title" data-action="edit-timeline-title" title="Modifier le titre" aria-label="Modifier le titre">&#9998;</button></div><div class="range">${formatHumanDate(timeline.start_date)} - ${formatHumanDate(timeline.end_date)}</div></div><div class="controls"><button class="icon-btn" data-action="zoom-out" title="Dezoomer">-</button><div class="zoom-readout">${Math.round(scale.pixelsPerDay)}px/j</div><button class="icon-btn" data-action="zoom-in" title="Zoomer">+</button><button class="command-btn" data-action="today">Aujourd'hui</button><button class="command-btn primary" data-action="save-timeline" ${state.isDirty ? "" : "disabled"}>Sauvegarder</button><button class="command-btn" data-action="share">Partager</button>${state.mode === "authenticated" ? `<span class="user-email" title="Compte connecte">${safe(state.user?.email || "")}</span><button class="command-btn" data-action="account">Compte</button><button class="command-btn" data-action="logout">Deconnexion</button>` : ""}</div></header>`}
-    <div class="timeline-frame" id="timeline-frame"><div class="timeline-canvas" id="timeline-canvas" style="width:${scale.width}px;height:${canvasHeight}px;--axis-top:${axisTop}px;--calendar-top:${calendarTop}px;--period-top:${periodTop}px;--annotation-top:${annotationTop}px">
+    <section class="workspace">${state.readOnly ? "" : `${state.mode === "sandbox" ? `<aside class="sandbox-banner"><span>&#9883; Mode bac a sable</span><span>Cette frise est partagee et modifiable par tous. Elle n'est pas enregistree dans votre compte.</span><button data-action="return-access">Se connecter pour sauvegarder</button></aside>` : ""}<header class="topbar"><div><div class="eyebrow">Editeur</div><div class="timeline-title"><h1>${safe(timeline.name)}</h1><button class="icon-btn edit-title" data-action="edit-timeline-title" title="Modifier le titre" aria-label="Modifier le titre">&#9998;</button></div><div class="range">${formatHumanDate(timeline.start_date)} - ${formatHumanDate(timeline.end_date)}</div></div><div class="controls"><label class="theme-picker" title="Apparence de la frise"><span>Theme</span><select data-theme-select aria-label="Theme visuel">${themeOptions()}</select></label><button class="icon-btn" data-action="zoom-out" title="Dezoomer">-</button><div class="zoom-readout">${Math.round(scale.pixelsPerDay)}px/j</div><button class="icon-btn" data-action="zoom-in" title="Zoomer">+</button><button class="command-btn" data-action="today">Aujourd'hui</button><button class="command-btn primary" data-action="save-timeline" ${state.isDirty ? "" : "disabled"}>Sauvegarder</button><button class="command-btn" data-action="share">Partager</button>${state.mode === "authenticated" ? `<span class="user-email" title="Compte connecte">${safe(state.user?.email || "")}</span><button class="command-btn" data-action="account">Compte</button><button class="command-btn" data-action="logout">Deconnexion</button>` : ""}</div></header>`}
+    <div class="timeline-frame" id="timeline-frame"><div class="timeline-canvas calendar-${calendarMode}" id="timeline-canvas" style="width:${scale.width}px;height:${canvasHeight}px;--axis-top:${axisTop}px;--calendar-top:${calendarTop}px;--period-top:${periodTop}px;--annotation-top:${annotationTop}px">
       <aside class="hover-details" id="hover-details" aria-live="polite"></aside>
-      ${generateTicks(scale).map((tick) => `<div class="tick" style="left:${tick.x}px"><span class="tick-label ${tick.isWeekend ? "weekend" : ""}">${formatTick(tick)}</span></div>`).join("")}
+      ${ticks.map((tick) => `<div class="tick" style="left:${tick.x}px"><span class="tick-label ${tick.isWeekend ? "weekend" : ""}">${formatTick(tick)}</span></div>`).join("")}
       <div class="calendar-months">${calendarContext.months.map((month, index) => `<span class="calendar-context month" style="left:${month.x}px;width:${(calendarContext.months[index + 1]?.x || scale.width) - month.x}px">${month.label}</span>`).join("")}</div>
       <div class="calendar-weeks">${calendarContext.weeks.map((week, index) => `<span class="calendar-context week" style="left:${week.x}px;width:${(calendarContext.weeks[index + 1]?.x || scale.width) - week.x}px">${week.label}</span>`).join("")}</div>
       <div class="axis" style="width:${scale.width}px"></div>
@@ -329,6 +343,11 @@ modalRoot.addEventListener("change", (event) => {
   field.querySelector("input[name=\"color\"]").value = event.target.value;
   field.querySelector(".active-color-swatch").style.setProperty("--swatch", event.target.value);
   field.querySelectorAll(".color-swatch").forEach((swatch) => swatch.classList.remove("selected"));
+});
+app.addEventListener("change", (event) => {
+  if (!event.target.matches("[data-theme-select]")) return;
+  localStorage.setItem(THEME_KEY, event.target.value);
+  render();
 });
 
 app.addEventListener("contextmenu", (event) => { if (!state.readOnly && event.target.closest("#timeline-canvas")) { event.preventDefault(); showContextMenu(event); } });
