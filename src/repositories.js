@@ -36,7 +36,7 @@ export class SupabaseTimelineRepository {
   constructor(user, isSandbox = false) { this.user = user; this.isSandbox = isSandbox; this.client = getSupabaseClient(); }
   async loadStore() {
     const [timelines, recurrences, items, assignments] = await Promise.all([
-      this.client.from("tl_timelines").select("id,name,start_date,end_date,is_sandbox,is_public,public_token").eq("is_sandbox", this.isSandbox).order("created_at"),
+      this.client.from("tl_timelines").select("id,name,start_date,end_date,theme,is_sandbox,is_public,public_token").eq("is_sandbox", this.isSandbox).order("created_at"),
       this.client.from("tl_recurrences").select("*").order("created_at"),
       this.client.from("tl_items").select("*").order("start_date"),
       this.client.from("tl_raci_assignments").select("item_id,role,person")
@@ -61,7 +61,7 @@ export class SupabaseTimelineRepository {
   async updateItem(store, item) { const index = store.items.findIndex(({ id }) => id === item.id); store.items[index] = item; }
   async deleteItem(store, itemId) { store.items = store.items.filter(({ id }) => id !== itemId); }
   async saveStore(store) {
-    const timelineRows = store.timelines.map(({ id, name, start_date, end_date, is_sandbox = this.isSandbox, is_public, public_token }) => ({ id, name, start_date, end_date, is_sandbox, is_public, public_token, ...(is_sandbox ? { user_id: null } : {}) }));
+    const timelineRows = store.timelines.map(({ id, name, start_date, end_date, theme = "atelier", is_sandbox = this.isSandbox, is_public, public_token }) => ({ id, name, start_date, end_date, theme, is_sandbox, is_public, public_token, ...(is_sandbox ? { user_id: null } : {}) }));
     const itemRows = store.items.map(({ id, timeline_id, type, label, description = "", link_alias = "", link_url = "", start_date, end_date, color, render_mode = "bracket", recurrence_id }) => ({ id, timeline_id, type, label, description, link_alias, link_url, start_date, end_date, color, render_mode, recurrence_id }));
     const recurrenceRows = store.recurrences.map(({ id, timeline_id, type, frequency, interval, occurrences, start_date, duration, duration_unit }) => ({ id, timeline_id, type, frequency, interval, occurrences, start_date, duration, duration_unit }));
     const timelineIds = store.timelines.map(({ id }) => id);
@@ -92,7 +92,7 @@ export class SupabaseTimelineRepository {
 export class PublicTimelineRepository {
   constructor() { this.client = getSupabaseClient(); }
   async loadStore(publicToken) {
-    const { data: timeline, error: timelineError } = await this.client.from("tl_timelines").select("id,name,start_date,end_date,is_sandbox,is_public,public_token").eq("public_token", publicToken).eq("is_public", true).maybeSingle();
+    const { data: timeline, error: timelineError } = await this.client.from("tl_timelines").select("id,name,start_date,end_date,theme,is_sandbox,is_public,public_token").eq("public_token", publicToken).eq("is_public", true).maybeSingle();
     if (timelineError) throw new Error(timelineError.message);
     if (!timeline) throw new Error("Cette frise n'est pas disponible en consultation.");
     const [recurrences, items, assignments] = await Promise.all([

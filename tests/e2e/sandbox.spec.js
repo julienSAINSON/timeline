@@ -48,6 +48,19 @@ test("supprime une frise apres confirmation", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Frise a supprimer", exact: true })).toHaveCount(0);
 });
 
+test("affiche les elements des frises cochees dans une vue combinee", async ({ page }) => {
+  await startSandbox(page);
+  await page.getByRole("button", { name: "+ Nouvelle frise" }).click();
+  await page.locator('input[name="name"]').fill("Lancements 2027");
+  await page.locator('input[name="start_date"]').fill("2027-01-01");
+  await page.locator('input[name="end_date"]').fill("2027-01-31");
+  await page.locator('form[data-form="timeline"]').evaluate((form) => form.requestSubmit());
+  await page.locator('[data-view-timeline]').first().check();
+  await page.getByRole("button", { name: "Vue", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Vue de 2 frises" })).toBeVisible();
+  await expect(page.locator(".element-row")).toHaveCount(14);
+});
+
 test("respecte les bornes de zoom et conserve un affichage utilisable", async ({ page }) => {
   await startSandbox(page);
   const zoomOut = page.getByRole("button", { name: "Dezoomer" });

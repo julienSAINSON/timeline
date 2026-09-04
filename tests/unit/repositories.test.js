@@ -51,11 +51,12 @@ describe("repositories Supabase", () => {
   it("persiste les timelines, elements, recurrents et affectations RACI", async () => {
     const repository = new SupabaseTimelineRepository({ id: "user-1" });
     await repository.saveStore({
-      timelines: [{ id: "timeline-1", name: "Roadmap", start_date: "2026-01-01", end_date: "2026-01-31", is_public: false, public_token: "token" }],
+      timelines: [{ id: "timeline-1", name: "Roadmap", start_date: "2026-01-01", end_date: "2026-01-31", theme: "jardin", is_public: false, public_token: "token" }],
       items: [{ id: "item-1", timeline_id: "timeline-1", type: "milestone", label: "Decision", start_date: "2026-01-10", end_date: null, color: "blue", raci: '{"responsible":"Alice, Bruno"}' }],
       recurrences: [{ id: "recurrence-1", timeline_id: "timeline-1", type: "milestone", frequency: "week", interval: 1, occurrences: 2, start_date: "2026-01-10" }],
     });
     expect(calls).toContainEqual(expect.objectContaining({ operation: "upsert", table: "tl_timelines" }));
+    expect(calls).toContainEqual(expect.objectContaining({ operation: "upsert", table: "tl_timelines", rows: [expect.objectContaining({ theme: "jardin" })] }));
     expect(calls).toContainEqual(expect.objectContaining({ operation: "upsert", table: "tl_items" }));
     expect(calls).toContainEqual(expect.objectContaining({ operation: "upsert", table: "tl_recurrences" }));
     expect(calls).toContainEqual(expect.objectContaining({ operation: "upsert", table: "tl_raci_assignments", rows: expect.arrayContaining([

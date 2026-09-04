@@ -12,6 +12,7 @@ export const DEMO_TIMELINE = {
   name: "Roadmap Produit 2026",
   start_date: "2026-01-01",
   end_date: "2026-12-31",
+  theme: "atelier",
   is_public: false,
   public_token: "demo-roadmap-2026",
 };

@@ -10,6 +10,7 @@ create table if not exists public.tl_timelines (
   name text not null check (char_length(name) between 1 and 120),
   start_date date not null,
   end_date date not null check (end_date >= start_date),
+  theme text not null default 'atelier',
   is_sandbox boolean not null default false,
   is_public boolean not null default false,
   public_token uuid not null default gen_random_uuid() unique,
@@ -20,6 +21,7 @@ create table if not exists public.tl_timelines (
 
 alter table public.tl_timelines alter column user_id drop not null;
 alter table public.tl_timelines add column if not exists is_sandbox boolean not null default false;
+alter table public.tl_timelines add column if not exists theme text not null default 'atelier';
 alter table public.tl_timelines drop constraint if exists tl_timelines_sandbox_owner_check;
 alter table public.tl_timelines add constraint tl_timelines_sandbox_owner_check check ((is_sandbox and user_id is null) or (not is_sandbox and user_id is not null));
 

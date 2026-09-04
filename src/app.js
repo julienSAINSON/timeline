@@ -9,10 +9,9 @@ import { getCurrentUser, initAuth, loginWithGoogle, logout } from "../supabase/a
 
 const app = document.querySelector("#app");
 const modalRoot = document.querySelector("#modal-root");
-const state = { store: { timelines: [], items: [], recurrences: [] }, activeTimelineId: null, zoom: 6, contextDate: null, readOnly: false, selectedItemId: null, detailsItemId: null, skipNextItemClick: false, mode: null, user: null, isDirty: false };
+const state = { store: { timelines: [], items: [], recurrences: [] }, activeTimelineId: null, selectedTimelineIds: [], viewTimelineIds: null, timelineSearch: "", zoom: 6, contextDate: null, readOnly: false, selectedItemId: null, detailsItemId: null, skipNextItemClick: false, mode: null, user: null, isDirty: false };
 const RECENT_COLORS_KEY = "timeline-recent-colors";
 const ACCESS_MODE_KEY = "timeline-access-mode";
-const THEME_KEY = "timeline-theme";
 const THEMES = {
   atelier: "Atelier Clair",
   tableau: "Tableau Graphique",
@@ -29,7 +28,7 @@ state.readOnly = Boolean(publicToken);
 let repository = null;
 
 function markDirty() { state.isDirty = true; app.querySelector("[data-action=\"save-timeline\"]")?.removeAttribute("disabled"); }
-function createTimeline(store, data) { const timeline = { id: crypto.randomUUID(), public_token: crypto.randomUUID(), is_public: false, is_sandbox: state.mode === "sandbox", ...data }; store.timelines.push(timeline); markDirty(); return timeline; }
+function createTimeline(store, data) { const timeline = { id: crypto.randomUUID(), public_token: crypto.randomUUID(), is_public: false, is_sandbox: state.mode === "sandbox", theme: "atelier", ...data }; store.timelines.push(timeline); markDirty(); return timeline; }
 function saveItem(store, item) { const index = store.items.findIndex(({ id }) => id === item.id); if (index === -1) store.items.push(item); else store.items[index] = item; markDirty(); }
 function deleteItem(store, itemId) { store.items = store.items.filter(({ id }) => id !== itemId); markDirty(); }
 function saveStore(store) { return repository?.saveStore(store); }
@@ -41,6 +40,7 @@ async function startSandbox() {
   state.user = null;
   state.store = await repository.loadStore();
   state.activeTimelineId = state.store.timelines[0]?.id || null;
+  state.selectedTimelineIds = state.activeTimelineId ? [state.activeTimelineId] : [];
   fitTimelineToViewport();
   state.isDirty = false;
   renderFittedTimeline();
@@ -51,6 +51,7 @@ async function startAuthenticated(user) {
   state.user = user;
   state.store = await repository.loadStore();
   state.activeTimelineId = state.store.timelines[0]?.id || null;
+  state.selectedTimelineIds = state.activeTimelineId ? [state.activeTimelineId] : [];
   fitTimelineToViewport();
   state.isDirty = false;
   renderFittedTimeline();
@@ -61,6 +62,7 @@ async function startPublicView() {
   state.user = null;
   state.store = await repository.loadStore(publicToken);
   state.activeTimelineId = state.store.timelines[0].id;
+  state.selectedTimelineIds = [state.activeTimelineId];
   fitTimelineToViewport();
   state.isDirty = false;
   renderFittedTimeline();
@@ -75,13 +77,22 @@ async function bootstrap() {
   renderAccessScreen();
 }
 
-function activeTimeline() { return state.store.timelines.find(({ id }) => id === state.activeTimelineId); }
+function isCombinedView() { return (state.viewTimelineIds || []).length > 1; }
+function selectedTimelines() {
+  const selectedIds = state.viewTimelineIds || [state.activeTimelineId];
+  return state.store.timelines.filter(({ id }) => selectedIds.includes(id));
+}
+function activeTimeline() {
+  if (!isCombinedView()) return state.store.timelines.find(({ id }) => id === state.activeTimelineId);
+  const timelines = selectedTimelines();
+  return { id: null, name: `Vue de ${timelines.length} frises`, start_date: timelines.map(({ start_date }) => start_date).sort()[0], end_date: timelines.map(({ end_date }) => end_date).sort().at(-1) };
+}
 function timelineViewportWidth() { return Math.max(900, document.querySelector("#timeline-frame")?.clientWidth || window.innerWidth - (state.readOnly ? 0 : 302)); }
 function minimumZoom(timeline = activeTimeline()) { return timeline ? Math.max(1, timelineViewportWidth() / Math.max(1, daysBetween(timeline.start_date, timeline.end_date))) : 1; }
 function fitTimelineToViewport() { state.zoom = minimumZoom(); }
 function currentScale(timeline = activeTimeline()) { return createScale(timeline, state.zoom); }
-function items() { return state.store.items.filter(({ timeline_id }) => timeline_id === state.activeTimelineId); }
-function currentTheme() { return THEMES[localStorage.getItem(THEME_KEY)] ? localStorage.getItem(THEME_KEY) : "atelier"; }
+function items() { return state.store.items.filter(({ timeline_id }) => selectedTimelines().some(({ id }) => id === timeline_id)); }
+function currentTheme(timeline = activeTimeline()) { return THEMES[timeline?.theme] ? timeline.theme : "atelier"; }
 function themeOptions() { return Object.entries(THEMES).map(([id, label]) => `<option value="${id}" ${id === currentTheme() ? "selected" : ""}>${label}</option>`).join(""); }
 function renderFittedTimeline() {
   render();
@@ -161,6 +172,7 @@ function renderPublicUnavailable(message) {
 function render() {
   const timeline = activeTimeline();
   if (!timeline) { renderWelcome(); return; }
+  const combinedView = isCombinedView();
   const scale = currentScale(timeline);
   const timelineItems = items();
   const layout = layoutTimeline(timelineItems, scale);
@@ -178,8 +190,8 @@ function render() {
   const calendarMode = ticks[0]?.mode || "quarter";
   const canvasHeight = fullyZoomedOutLayout.contentBottom - fullyZoomedOutLayout.contentTop + 32;
   app.innerHTML = `<div class="shell theme-${currentTheme()} ${state.readOnly ? "public-view" : ""}">
-    ${state.readOnly ? "" : `<aside class="sidebar"><div>${state.mode === "sandbox" ? `<button class="brand" data-action="return-access" title="Revenir a l'accueil">time<span>line</span></button>` : `<div class="brand">time<span>line</span></div>`}<nav><div class="sidebar-label">Mes frises</div><div class="timeline-list">${state.store.timelines.map((entry) => `<button class="timeline-choice ${entry.id === timeline.id ? "active" : ""}" data-timeline="${entry.id}">${safe(entry.name)}</button>`).join("")}</div></nav></div><button class="new-timeline" data-action="new-timeline">+ Nouvelle frise</button></aside>`}
-    <section class="workspace">${state.readOnly ? "" : `${state.mode === "sandbox" ? `<aside class="sandbox-banner"><span>&#9883; Mode bac a sable</span><span>Cette frise est enregistree uniquement dans ce navigateur. Elle ne sera pas sauvegardee dans votre compte.</span><button data-action="return-access">Se connecter pour sauvegarder dans votre compte</button></aside>` : ""}<header class="topbar"><div><div class="eyebrow">Editeur</div><div class="timeline-title"><h1>${safe(timeline.name)}</h1><button class="icon-btn edit-title" data-action="edit-timeline-title" title="Modifier le titre" aria-label="Modifier le titre">&#9998;</button><button class="icon-btn delete-timeline" data-action="delete-timeline" title="Supprimer la frise" aria-label="Supprimer la frise">&#128465;</button></div><div class="range">${formatHumanDate(timeline.start_date)} - ${formatHumanDate(timeline.end_date)}</div></div><div class="controls"><label class="theme-picker" title="Apparence de la frise"><span>Theme</span><select data-theme-select aria-label="Theme visuel">${themeOptions()}</select></label><button class="icon-btn" data-action="zoom-out" title="Dezoomer">-</button><div class="zoom-readout">${Math.round(scale.pixelsPerDay)}px/j</div><button class="icon-btn" data-action="zoom-in" title="Zoomer">+</button><button class="command-btn" data-action="today">Aujourd'hui</button><button class="command-btn primary" data-action="save-timeline" ${state.isDirty ? "" : "disabled"}>Sauvegarder</button><button class="command-btn" data-action="share">Partager</button>${state.mode === "authenticated" ? `<span class="user-email" title="Compte connecte">${safe(state.user?.email || "")}</span><button class="command-btn" data-action="account">Compte</button><button class="command-btn" data-action="logout">Deconnexion</button>` : ""}</div></header>`}
+    ${state.readOnly ? "" : `<aside class="sidebar"><div>${state.mode === "sandbox" ? `<button class="brand" data-action="return-access" title="Revenir a l'accueil">time<span>line</span></button>` : `<div class="brand">time<span>line</span></div>`}<button class="new-timeline" data-action="new-timeline">+ Nouvelle frise</button><nav><div class="sidebar-heading"><div class="sidebar-label">Mes frises</div><input class="timeline-search" type="search" data-timeline-search value="${safe(state.timelineSearch)}" placeholder="Rechercher" aria-label="Rechercher une frise"></div><div class="timeline-list">${state.store.timelines.map((entry) => `<label class="timeline-choice ${entry.id === state.activeTimelineId && !combinedView ? "active" : ""}" data-timeline-name="${safe(entry.name.toLocaleLowerCase())}"><input type="checkbox" data-view-timeline="${entry.id}" ${state.selectedTimelineIds.includes(entry.id) ? "checked" : ""}><span>${safe(entry.name)}</span><button type="button" class="timeline-open" data-timeline="${entry.id}" title="Ouvrir ${safe(entry.name)}" aria-label="Ouvrir ${safe(entry.name)}">›</button></label>`).join("")}</div><button class="command-btn view-timelines" data-action="view-timelines" ${state.selectedTimelineIds.length ? "" : "disabled"}>Vue</button></nav></div></aside>`}
+    <section class="workspace">${state.readOnly ? "" : `${state.mode === "sandbox" ? `<aside class="sandbox-banner"><span>&#9883; Mode bac a sable</span><span>Cette frise est enregistree uniquement dans ce navigateur. Elle ne sera pas sauvegardee dans votre compte.</span><button data-action="return-access">Se connecter pour sauvegarder dans votre compte</button></aside>` : ""}<header class="topbar"><div><div class="eyebrow">Editeur</div><div class="timeline-title"><h1>${safe(timeline.name)}</h1><button class="icon-btn edit-title" data-action="edit-timeline-title" title="Modifier le titre" aria-label="Modifier le titre">&#9998;</button><button class="icon-btn delete-timeline" data-action="delete-timeline" title="Supprimer la frise" aria-label="Supprimer la frise">&#128465;</button><button class="icon-btn save-timeline" data-action="save-timeline" title="Sauvegarder" aria-label="Sauvegarder" ${state.isDirty ? "" : "disabled"}>&#128190;</button><button class="icon-btn" data-action="share" title="Partager" aria-label="Partager">&#10548;</button></div><div class="range">${formatHumanDate(timeline.start_date)} - ${formatHumanDate(timeline.end_date)}</div></div><div class="controls"><label class="theme-picker" title="Apparence de la frise"><span>Theme</span><select data-theme-select aria-label="Theme visuel">${themeOptions()}</select></label><button class="icon-btn" data-action="zoom-out" title="Dezoomer">-</button><div class="zoom-readout">${Math.round(scale.pixelsPerDay)}px/j</div><button class="icon-btn" data-action="zoom-in" title="Zoomer">+</button><button class="command-btn" data-action="today">Aujourd'hui</button>${state.mode === "authenticated" ? `<span class="user-email" title="Compte connecte">${safe(state.user?.email || "")}</span><button class="command-btn" data-action="account">Compte</button><button class="command-btn" data-action="logout">Deconnexion</button>` : ""}</div></header>`}
     <div class="timeline-frame-shell"><aside class="hover-details" id="hover-details" aria-live="polite"></aside><div class="timeline-frame" id="timeline-frame"><div class="timeline-canvas calendar-${calendarMode}" id="timeline-canvas" style="width:${scale.width}px;height:${canvasHeight}px;--axis-top:${axisTop}px;--calendar-top:${calendarTop}px;--period-top:${periodTop}px;--annotation-top:${annotationTop}px">
       ${ticks.map((tick) => `<div class="tick" style="left:${tick.x}px"><span class="tick-label ${tick.isWeekend ? "weekend" : ""}">${formatTick(tick)}</span></div>`).join("")}
       <div class="calendar-months">${calendarContext.months.map((month, index) => `<span class="calendar-context month" style="left:${month.x}px;width:${(calendarContext.months[index + 1]?.x || scale.width) - month.x}px">${month.label}</span>`).join("")}</div>
@@ -190,6 +202,7 @@ function render() {
       ${periods.map((item) => renderPeriod(item, scale)).join("")}
       ${timelineItems.filter(({ type }) => type === "annotation").map((item) => renderAnnotation(item, scale)).join("")}
     </div></div></div>${state.readOnly ? "" : `<p class="hint">Clic droit sur la frise pour ajouter un element. Faites glisser une periode ou ses extremites pour modifier ses dates.</p><section class="element-list" aria-label="Elements de la frise"><div class="element-list-heading"><h2>Elements</h2><span>${timelineItems.length} element${timelineItems.length > 1 ? "s" : ""}</span></div>${chronologicalItems().map((item) => `<article class="element-row" data-item="${item.id}"><span class="element-color" style="--item-color:${colorValue(item.color)}"></span><div><strong>${safe(item.label)}</strong><span class="element-type">${item.type === "milestone" ? "Jalon" : item.type === "period" ? "Periode" : "Annotation"}</span></div><time>${itemDateLabel(item)}</time><div class="element-notes"><p>${safe(item.description || "Aucune description")}</p>${itemLink(item)}${raciEntries(item).length ? `<dl class="raci-summary">${raciEntries(item).map(([role, people]) => `<div><dt>${role}</dt><dd>${safe(people)}</dd></div>`).join("")}</dl>` : ""}</div></article>`).join("")}</section>`}</section></div>`;
+  if (combinedView) app.querySelectorAll(".edit-title, .delete-timeline, [data-action=\"share\"]").forEach((element) => { element.hidden = true; });
   if (state.detailsItemId) showHoverDetails(state.detailsItemId);
 }
 
@@ -197,7 +210,7 @@ function renderPeriod(item, scale) {
   const x = dateToX(item.start_date, scale);
   const width = Math.max(32, (daysBetween(item.start_date, item.end_date) + 1) * scale.pixelsPerDay);
   const labelFitsInside = width >= item.label.length * 7.5 + 28;
-  return `<button class="period ${item.render_mode === "rectangle" ? "rectangle" : ""} ${item.id === state.selectedItemId ? "selected" : ""}" data-item="${item.id}" style="left:${x}px;width:${width}px;color:${colorValue(item.color)};--period-offset:${item.laneOffset}px" title="Double-cliquez pour modifier ${safe(item.label)}"><span class="resize-handle start" data-drag="start"></span><span class="period-label ${labelFitsInside ? "inside" : ""}">${safe(item.label)}</span><span class="resize-handle end" data-drag="end"></span></button>`;
+  return `<button class="period ${item.render_mode === "rectangle" ? "rectangle" : ""} ${item.id === state.selectedItemId ? "selected" : ""}" data-item="${item.id}" style="left:${x}px;width:${width}px;--item-color:${colorValue(item.color)};color:var(--item-color);--period-offset:${item.laneOffset}px" title="Double-cliquez pour modifier ${safe(item.label)}"><span class="resize-handle start" data-drag="start"></span><span class="period-label ${labelFitsInside ? "inside" : ""}">${safe(item.label)}</span><span class="resize-handle end" data-drag="end"></span></button>`;
 }
 
 function renderAnnotation(item, scale) {
@@ -281,6 +294,7 @@ function showHoverDetails(itemId) {
   const item = state.store.items.find(({ id }) => id === itemId);
   const details = document.querySelector("#hover-details");
   if (!item || !details) return;
+  details.style.setProperty("--hover-item-color", colorValue(item.color));
   details.innerHTML = `<strong>${safe(item.label)}</strong><span>${itemDateLabel(item)}</span>${item.description ? `<p>${safe(item.description)}</p>` : ""}${itemLink(item, "hover-link")}${raciSummary(item) ? `<p class="hover-raci">${safe(raciSummary(item))}</p>` : ""}`;
   details.classList.add("visible");
 }
@@ -313,27 +327,32 @@ document.addEventListener("click", (event) => {
   if (action === "zoom-in") { state.zoom = Math.min(34, state.zoom + 2); renderPreservingDetails(); }
   if (action === "zoom-out") { state.zoom = Math.max(minimumZoom(), state.zoom - 2); renderPreservingDetails(); }
   if (action === "today") scrollToToday();
-  if (action === "edit-timeline-title") openModal("Modifier le titre", timelineTitleForm(activeTimeline()));
-  if (action === "delete-timeline") { openDeleteTimelineConfirmation(); return; }
+  if (action === "view-timelines") { state.viewTimelineIds = [...state.selectedTimelineIds]; state.activeTimelineId = state.viewTimelineIds[0] || null; state.selectedItemId = null; state.detailsItemId = null; renderFittedTimeline(); return; }
+  if (action === "edit-timeline-title" && !isCombinedView()) openModal("Modifier le titre", timelineTitleForm(activeTimeline()));
+  if (action === "delete-timeline" && !isCombinedView()) { openDeleteTimelineConfirmation(); return; }
   if (action === "confirm-delete-timeline") { deleteActiveTimeline(actionElement.dataset.timeline); return; }
   if (action === "save-timeline") {
-    actionElement.textContent = "Sauvegarde...";
+    const iconOnly = actionElement.classList.contains("save-timeline");
+    if (iconOnly) { actionElement.title = "Sauvegarde..."; actionElement.setAttribute("aria-label", "Sauvegarde..."); }
+    else actionElement.textContent = "Sauvegarde...";
     actionElement.disabled = true;
     saveStore(state.store).then(() => {
       state.isDirty = false;
-      actionElement.textContent = "Sauvegarde effectuee";
+      if (iconOnly) { actionElement.title = "Sauvegarde effectuee"; actionElement.setAttribute("aria-label", "Sauvegarde effectuee"); }
+      else actionElement.textContent = "Sauvegarde effectuee";
     }).catch((error) => {
-      actionElement.textContent = "Sauvegarde impossible";
+      if (iconOnly) { actionElement.title = "Sauvegarde impossible"; actionElement.setAttribute("aria-label", "Sauvegarde impossible"); }
+      else actionElement.textContent = "Sauvegarde impossible";
       openModal("Sauvegarde", `<p>${safe(error.message)}</p><div class="modal-actions"><span></span><button class="command-btn primary" data-action="close-modal">Fermer</button></div>`);
-    }).finally(() => window.setTimeout(() => { actionElement.textContent = "Sauvegarder"; actionElement.disabled = !state.isDirty; }, 1800));
+    }).finally(() => window.setTimeout(() => { if (iconOnly) { actionElement.title = "Sauvegarder"; actionElement.setAttribute("aria-label", "Sauvegarder"); } else actionElement.textContent = "Sauvegarder"; actionElement.disabled = !state.isDirty; }, 1800));
   }
   if (action === "new-timeline") openModal("Creer une timeline", timelineForm());
   if (action === "close-modal") closeModal();
   if (action === "delete-item") { const itemId = event.target.dataset.item; deleteItem(state.store, itemId); if (state.selectedItemId === itemId) state.selectedItemId = null; if (state.detailsItemId === itemId) state.detailsItemId = null; closeModal(); render(); }
-  if (action === "share") { const timeline = activeTimeline(); timeline.is_public = true; markDirty(); openModal("Lien de consultation", `<div class="share-link"><input readonly value="${location.origin}${location.pathname}?view=${timeline.public_token}"><button class="icon-btn copy-link-button" data-action="copy-share-link" title="Copier le lien" aria-label="Copier le lien"><span class="copy-link-icon" aria-hidden="true"></span></button><button class="command-btn" data-action="close-modal">Fermer</button></div>`); }
+  if (action === "share" && !isCombinedView()) { const timeline = activeTimeline(); timeline.is_public = true; markDirty(); openModal("Lien de consultation", `<div class="share-link"><input readonly value="${location.origin}${location.pathname}?view=${timeline.public_token}"><button class="icon-btn copy-link-button" data-action="copy-share-link" title="Copier le lien" aria-label="Copier le lien"><span class="copy-link-icon" aria-hidden="true"></span></button><button class="command-btn" data-action="close-modal">Fermer</button></div>`); }
   if (action === "copy-share-link") copyShareLink(event.target.closest("button"));
   const timelineId = event.target.closest("[data-timeline]")?.dataset.timeline;
-  if (timelineId) { state.activeTimelineId = timelineId; state.selectedItemId = null; state.detailsItemId = null; render(); }
+  if (timelineId) { state.activeTimelineId = timelineId; state.selectedTimelineIds = [timelineId]; state.viewTimelineIds = null; state.selectedItemId = null; state.detailsItemId = null; render(); }
   const itemElement = event.target.closest("[data-item]");
   const itemId = itemElement?.dataset.item;
   if (itemId && !state.readOnly) {
@@ -364,9 +383,9 @@ document.addEventListener("submit", (event) => {
   event.preventDefault(); const data = Object.fromEntries(new FormData(event.target));
   if (data.form === "") return;
   if (data.color) rememberColor(data.color);
-  if (event.target.dataset.form === "timeline") { const timeline = createTimeline(state.store, data); state.activeTimelineId = timeline.id; closeModal(); render(); return; }
+  if (event.target.dataset.form === "timeline") { const timeline = createTimeline(state.store, data); state.activeTimelineId = timeline.id; state.selectedTimelineIds = [timeline.id]; state.viewTimelineIds = null; closeModal(); render(); return; }
   if (event.target.dataset.form === "timeline-title") { activeTimeline().name = data.name.trim(); markDirty(); closeModal(); render(); return; }
-  if (event.target.dataset.form === "item") { const raci = data.type === "milestone" ? JSON.stringify({ responsible: data.raci_responsible, accountable: data.raci_accountable, consulted: data.raci_consulted, informed: data.raci_informed }) : ""; delete data.raci_responsible; delete data.raci_accountable; delete data.raci_consulted; delete data.raci_informed; saveItem(state.store, { ...data, raci, id: data.id || crypto.randomUUID(), timeline_id: state.activeTimelineId, recurrence_id: null }); closeModal(); render(); return; }
+  if (event.target.dataset.form === "item") { const raci = data.type === "milestone" ? JSON.stringify({ responsible: data.raci_responsible, accountable: data.raci_accountable, consulted: data.raci_consulted, informed: data.raci_informed }) : ""; const existingItem = state.store.items.find(({ id }) => id === data.id); delete data.raci_responsible; delete data.raci_accountable; delete data.raci_consulted; delete data.raci_informed; saveItem(state.store, { ...existingItem, ...data, raci, id: data.id || crypto.randomUUID(), timeline_id: existingItem?.timeline_id || state.activeTimelineId, recurrence_id: existingItem?.recurrence_id || null }); closeModal(); render(); return; }
   if (event.target.dataset.form === "recurrence") { const recurrence = { ...data, id: crypto.randomUUID(), timeline_id: state.activeTimelineId, occurrences: Number(data.occurrences), duration: Number(data.duration || 1), interval: Number(data.interval) }; state.store.recurrences.push(recurrence); generateOccurrences(recurrence).forEach((item) => saveItem(state.store, item)); markDirty(); closeModal(); render(); }
 });
 modalRoot.addEventListener("change", (event) => {
@@ -377,12 +396,33 @@ modalRoot.addEventListener("change", (event) => {
   field.querySelectorAll(".color-swatch").forEach((swatch) => swatch.classList.remove("selected"));
 });
 app.addEventListener("change", (event) => {
+  if (event.target.matches("[data-view-timeline]")) {
+    const timelineId = event.target.dataset.viewTimeline;
+    state.selectedTimelineIds = event.target.checked ? [...new Set([...state.selectedTimelineIds, timelineId])] : state.selectedTimelineIds.filter((id) => id !== timelineId);
+    const button = app.querySelector("[data-action=\"view-timelines\"]");
+    if (button) button.disabled = !state.selectedTimelineIds.length;
+    return;
+  }
   if (!event.target.matches("[data-theme-select]")) return;
-  localStorage.setItem(THEME_KEY, event.target.value);
+  const timeline = activeTimeline();
+  if (!timeline?.id) return;
+  timeline.theme = event.target.value;
+  markDirty();
   renderPreservingDetails();
 });
+function filterTimelineList(value) {
+  state.timelineSearch = value;
+  const query = state.timelineSearch.trim().toLocaleLowerCase();
+  app.querySelectorAll(".timeline-choice").forEach((entry) => {
+    const name = entry.querySelector("span")?.textContent.toLocaleLowerCase() || "";
+    entry.hidden = query.length >= 3 && !name.includes(query);
+  });
+}
+app.addEventListener("input", (event) => { if (event.target.matches("[data-timeline-search]")) filterTimelineList(event.target.value); });
+app.addEventListener("search", (event) => { if (event.target.matches("[data-timeline-search]")) filterTimelineList(event.target.value); });
+app.addEventListener("keyup", (event) => { if (event.target.matches("[data-timeline-search]")) filterTimelineList(event.target.value); });
 
-app.addEventListener("contextmenu", (event) => { if (!state.readOnly && event.target.closest("#timeline-canvas")) { event.preventDefault(); showContextMenu(event); } });
+app.addEventListener("contextmenu", (event) => { if (!state.readOnly && !isCombinedView() && event.target.closest("#timeline-canvas")) { event.preventDefault(); showContextMenu(event); } });
 app.addEventListener("pointerover", (event) => {
   const itemId = event.target.closest("[data-item]")?.dataset.item;
   if (itemId && !state.selectedItemId) showHoverDetails(itemId);
