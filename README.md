@@ -20,7 +20,7 @@ BETA d'une frise chronologique interactive, pensée pour la planification visuel
 - `supabase/auth/`: modules Google OAuth existants, reutilises par Timeline.
 - `src/app.js`: mire d'acces, orchestration de l'interface et interactions DOM.
 - `src/repositories.js`: depots local et Supabase, utilises par le meme editeur.
-- `src/storage.js`: secours local lorsqu'aucune configuration Supabase n'est disponible.
+- `src/storage.js`: persistance locale du bac a sable dans le navigateur.
 - `supabase/schema.sql`: schema relationnel `tl_*` securise a executer une fois dans une base vide.
 
 ## Lancer localement
@@ -33,6 +33,19 @@ py -m http.server 4173
 
 Ouvrez ensuite `http://localhost:4173`.
 
+## Tests
+
+Les tests unitaires couvrent les calculs de dates, echelles, placements, recurrents et stockage local. Les parcours Playwright couvrent le bac a sable dans un navigateur isole de Supabase.
+
+```powershell
+npm install
+npx playwright install chromium
+npm run test
+npm run test:e2e
+```
+
+Node.js LTS est requis pour ces commandes. Les politiques RLS Supabase et les conflits de sauvegarde necessitent encore un projet Supabase de test dedie : ils ne doivent jamais etre testes sur la base de production.
+
 ## Supabase
 
 1. Dans le projet Supabase existant de Timekeeper, executez [le schema](supabase/schema.sql) dans le SQL Editor. Il cree uniquement les tables Timeline `tl_*`.
@@ -42,7 +55,7 @@ Ouvrez ensuite `http://localhost:4173`.
 
 `src/config.js` est publie avec l'application car la cle `anon` est une cle publique. Ne mettez jamais de `service_role` ni une cle secrete dans ce projet frontend.
 
-Sans session Google, l'utilisateur choisit explicitement le bac a sable. Avec Supabase configure, les frises bac a sable sont stockees dans la base sans `user_id`, partagees et modifiables par tous les visiteurs. Elles ne sont jamais rattachees a un compte. Apres connexion Google, les donnees privees du compte sont chargees et sauvegardees exclusivement dans Supabase. Le transfert d'une frise bac a sable vers un compte n'est pas encore implemente.
+Sans session Google, l'utilisateur choisit explicitement le bac a sable. Ses frises sont stockees uniquement dans le `localStorage` de son navigateur, y compris si Supabase est configure. Elles ne sont ni partagees, ni envoyees dans Supabase, ni rattachees a un compte. La commande de partage public n'est donc pas disponible dans ce mode. Apres connexion Google, les donnees privees du compte sont chargees et sauvegardees exclusivement dans Supabase. Le transfert d'une frise bac a sable vers un compte n'est pas encore implemente.
 
 ## Deployer sur GitHub Pages
 
