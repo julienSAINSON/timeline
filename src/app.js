@@ -33,7 +33,7 @@ async function startSandbox() {
   state.activeTimelineId = state.store.timelines[0]?.id || null;
   fitTimelineToViewport();
   state.isDirty = false;
-  render();
+  renderFittedTimeline();
 }
 async function startAuthenticated(user) {
   repository = new SupabaseTimelineRepository(user);
@@ -43,7 +43,7 @@ async function startAuthenticated(user) {
   state.activeTimelineId = state.store.timelines[0]?.id || null;
   fitTimelineToViewport();
   state.isDirty = false;
-  render();
+  renderFittedTimeline();
 }
 async function startPublicView() {
   repository = new PublicTimelineRepository();
@@ -53,7 +53,7 @@ async function startPublicView() {
   state.activeTimelineId = state.store.timelines[0].id;
   fitTimelineToViewport();
   state.isDirty = false;
-  render();
+  renderFittedTimeline();
 }
 async function bootstrap() {
   if (!hasSupabaseConfig()) { renderAccessScreen(); return; }
@@ -67,10 +67,36 @@ async function bootstrap() {
 
 function activeTimeline() { return state.store.timelines.find(({ id }) => id === state.activeTimelineId); }
 function timelineViewportWidth() { return Math.max(900, document.querySelector("#timeline-frame")?.clientWidth || window.innerWidth - (state.readOnly ? 0 : 302)); }
-function minimumZoom(timeline = activeTimeline()) { return timeline ? Math.max(1, Math.ceil(timelineViewportWidth() / Math.max(1, daysBetween(timeline.start_date, timeline.end_date)))) : 1; }
+function minimumZoom(timeline = activeTimeline()) { return timeline ? Math.max(1, timelineViewportWidth() / Math.max(1, daysBetween(timeline.start_date, timeline.end_date))) : 1; }
 function fitTimelineToViewport() { state.zoom = minimumZoom(); }
 function currentScale(timeline = activeTimeline()) { return createScale(timeline, state.zoom); }
 function items() { return state.store.items.filter(({ timeline_id }) => timeline_id === state.activeTimelineId); }
+function renderFittedTimeline() {
+  render();
+  fitTimelineToViewport();
+  render();
+}
+function annotationHeight(item, scale) {
+  const width = Math.max(115, (daysBetween(item.start_date, item.end_date) + 1) * scale.pixelsPerDay);
+  const charactersPerLine = Math.max(1, Math.floor((width - 22) / 6.5));
+  return Math.max(48, 24 + Math.ceil(item.label.length / charactersPerLine) * 16);
+}
+function layoutTimeline(timelineItems, scale) {
+  const axisTop = 280;
+  const calendarTop = 218;
+  const periodTop = 300;
+  const milestoneLayout = layoutMilestones(timelineItems.filter(({ type }) => type === "milestone"), scale);
+  const periods = layoutPeriods(timelineItems.filter(({ type }) => type === "period"), scale);
+  const periodBottom = Math.max(45, ...periods.map((item) => item.laneOffset + item.laneHeight));
+  const bottomMilestoneTop = periodTop + periodBottom + 8;
+  const milestones = positionMilestoneLanes(milestoneLayout, { axisTop, calendarTop, bottomTop: bottomMilestoneTop });
+  const bottomMilestoneEnd = Math.max(bottomMilestoneTop, ...milestones.filter(({ side }) => side === "bottom").map((item) => item.cardTop + item.cardHeight));
+  const annotationTop = Math.max(periodTop + periodBottom + 12, bottomMilestoneEnd + 12);
+  const annotationBottom = Math.max(0, ...timelineItems.filter(({ type }) => type === "annotation").map((item) => annotationTop + annotationHeight(item, scale)));
+  const contentTop = Math.min(calendarTop, ...milestones.filter(({ side }) => side === "top").map((item) => item.cardTop));
+  const contentBottom = Math.max(axisTop + 4, periodTop + periodBottom, bottomMilestoneEnd, annotationBottom);
+  return { axisTop, calendarTop, periodTop, periods, milestones, annotationTop, contentTop, contentBottom };
+}
 function colorOptions(selected = "blue") { return Object.keys(COLORS).map((color) => `<option value="${color}" ${color === selected ? "selected" : ""}>${color}</option>`).join(""); }
 function safe(value) { return String(value || "").replace(/[&<>"']/g, (character) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[character])); }
 function itemDateLabel(item) { return item.end_date ? `${formatHumanDate(item.start_date)} - ${formatHumanDate(item.end_date)}` : formatHumanDate(item.start_date); }
@@ -116,23 +142,22 @@ function render() {
   if (!timeline) { renderWelcome(); return; }
   const scale = currentScale(timeline);
   const timelineItems = items();
-  const milestoneLayout = layoutMilestones(timelineItems.filter(({ type }) => type === "milestone"), scale);
-  const periods = layoutPeriods(timelineItems.filter(({ type }) => type === "period"), scale);
+  const layout = layoutTimeline(timelineItems, scale);
+  const fullyZoomedOutLayout = layoutTimeline(timelineItems, createScale(timeline, minimumZoom(timeline)));
+  const verticalOffset = 16 - fullyZoomedOutLayout.contentTop;
+  const axisTop = layout.axisTop + verticalOffset;
+  const calendarTop = layout.calendarTop + verticalOffset;
+  const periodTop = layout.periodTop + verticalOffset;
+  const annotationTop = layout.annotationTop + verticalOffset;
+  const periods = layout.periods;
+  const milestones = layout.milestones.map((item) => ({ ...item, cardTop: item.cardTop + verticalOffset }));
   const todayX = dateToX(new Date(), scale);
   const calendarContext = generateCalendarContext(scale);
-  const axisTop = 280;
-  const calendarTop = 218;
-  const periodTop = 300;
-  const periodBottom = Math.max(45, ...periods.map((item) => item.laneOffset + item.laneHeight));
-  const bottomMilestoneTop = periodTop + periodBottom + 8;
-  const milestones = positionMilestoneLanes(milestoneLayout, { axisTop, calendarTop, bottomTop: bottomMilestoneTop });
-  const bottomMilestoneEnd = Math.max(bottomMilestoneTop, ...milestones.filter(({ side }) => side === "bottom").map((item) => item.cardTop + item.cardHeight));
-  const annotationTop = Math.max(periodTop + periodBottom + 12, bottomMilestoneEnd + 12);
-  const canvasHeight = Math.max(570, annotationTop + 95);
+  const canvasHeight = fullyZoomedOutLayout.contentBottom - fullyZoomedOutLayout.contentTop + 32;
   app.innerHTML = `<div class="shell ${state.readOnly ? "public-view" : ""}">
     ${state.readOnly ? "" : `<aside class="sidebar"><div>${state.mode === "sandbox" ? `<button class="brand" data-action="return-access" title="Revenir a l'accueil">time<span>line</span></button>` : `<div class="brand">time<span>line</span></div>`}<nav><div class="sidebar-label">Mes frises</div><div class="timeline-list">${state.store.timelines.map((entry) => `<button class="timeline-choice ${entry.id === timeline.id ? "active" : ""}" data-timeline="${entry.id}">${safe(entry.name)}</button>`).join("")}</div></nav></div><button class="new-timeline" data-action="new-timeline">+ Nouvelle frise</button></aside>`}
     <section class="workspace">${state.readOnly ? "" : `${state.mode === "sandbox" ? `<aside class="sandbox-banner"><span>&#9883; Mode bac a sable</span><span>Cette frise est partagee et modifiable par tous. Elle n'est pas enregistree dans votre compte.</span><button data-action="return-access">Se connecter pour sauvegarder</button></aside>` : ""}<header class="topbar"><div><div class="eyebrow">Editeur</div><div class="timeline-title"><h1>${safe(timeline.name)}</h1><button class="icon-btn edit-title" data-action="edit-timeline-title" title="Modifier le titre" aria-label="Modifier le titre">&#9998;</button></div><div class="range">${formatHumanDate(timeline.start_date)} - ${formatHumanDate(timeline.end_date)}</div></div><div class="controls"><button class="icon-btn" data-action="zoom-out" title="Dezoomer">-</button><div class="zoom-readout">${Math.round(scale.pixelsPerDay)}px/j</div><button class="icon-btn" data-action="zoom-in" title="Zoomer">+</button><button class="command-btn" data-action="today">Aujourd'hui</button><button class="command-btn primary" data-action="save-timeline" ${state.isDirty ? "" : "disabled"}>Sauvegarder</button><button class="command-btn" data-action="share">Partager</button>${state.mode === "authenticated" ? `<span class="user-email" title="Compte connecte">${safe(state.user?.email || "")}</span><button class="command-btn" data-action="account">Compte</button><button class="command-btn" data-action="logout">Deconnexion</button>` : ""}</div></header>`}
-    <div class="timeline-frame" id="timeline-frame"><div class="timeline-canvas" id="timeline-canvas" style="width:${scale.width}px;height:${canvasHeight}px;--axis-top:${axisTop}px;--period-top:${periodTop}px;--annotation-top:${annotationTop}px">
+    <div class="timeline-frame" id="timeline-frame"><div class="timeline-canvas" id="timeline-canvas" style="width:${scale.width}px;height:${canvasHeight}px;--axis-top:${axisTop}px;--calendar-top:${calendarTop}px;--period-top:${periodTop}px;--annotation-top:${annotationTop}px">
       <aside class="hover-details" id="hover-details" aria-live="polite"></aside>
       ${generateTicks(scale).map((tick) => `<div class="tick" style="left:${tick.x}px"><span class="tick-label ${tick.isWeekend ? "weekend" : ""}">${formatTick(tick)}</span></div>`).join("")}
       <div class="calendar-months">${calendarContext.months.map((month, index) => `<span class="calendar-context month" style="left:${month.x}px;width:${(calendarContext.months[index + 1]?.x || scale.width) - month.x}px">${month.label}</span>`).join("")}</div>
