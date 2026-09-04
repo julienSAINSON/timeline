@@ -67,7 +67,8 @@ async function bootstrap() {
 
 function activeTimeline() { return state.store.timelines.find(({ id }) => id === state.activeTimelineId); }
 function timelineViewportWidth() { return Math.max(900, document.querySelector("#timeline-frame")?.clientWidth || window.innerWidth - (state.readOnly ? 0 : 302)); }
-function fitTimelineToViewport() { const timeline = activeTimeline(); if (timeline) state.zoom = Math.max(1, Math.ceil(timelineViewportWidth() / Math.max(1, daysBetween(timeline.start_date, timeline.end_date)))); }
+function minimumZoom(timeline = activeTimeline()) { return timeline ? Math.max(1, Math.ceil(timelineViewportWidth() / Math.max(1, daysBetween(timeline.start_date, timeline.end_date)))) : 1; }
+function fitTimelineToViewport() { state.zoom = minimumZoom(); }
 function currentScale(timeline = activeTimeline()) { return createScale(timeline, state.zoom); }
 function items() { return state.store.items.filter(({ timeline_id }) => timeline_id === state.activeTimelineId); }
 function colorOptions(selected = "blue") { return Object.keys(COLORS).map((color) => `<option value="${color}" ${color === selected ? "selected" : ""}>${color}</option>`).join(""); }
@@ -93,6 +94,7 @@ function chronologicalItems() {
   return [...items()].sort((left, right) => left.start_date.localeCompare(right.start_date) || typeOrder[left.type] - typeOrder[right.type] || left.label.localeCompare(right.label));
 }
 function colorValue(color) { return COLORS[color] || color; }
+function itemLink(item, className = "") { return item.link_alias && /^https?:\/\//i.test(item.link_url || "") ? `<a class="item-link ${className}" data-item-link href="${safe(item.link_url)}" target="_blank" rel="noopener noreferrer">${safe(item.link_alias)}</a>` : ""; }
 function recentColors() { try { return JSON.parse(localStorage.getItem(RECENT_COLORS_KEY)) || []; } catch { return []; } }
 function rememberColor(color) { localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify([color, ...recentColors().filter((entry) => entry !== color)].slice(0, 10))); }
 function colorPalette(selected = "blue") {
@@ -133,14 +135,14 @@ function render() {
     <div class="timeline-frame" id="timeline-frame"><div class="timeline-canvas" id="timeline-canvas" style="width:${scale.width}px;height:${canvasHeight}px;--axis-top:${axisTop}px;--period-top:${periodTop}px;--annotation-top:${annotationTop}px">
       <aside class="hover-details" id="hover-details" aria-live="polite"></aside>
       ${generateTicks(scale).map((tick) => `<div class="tick" style="left:${tick.x}px"><span class="tick-label ${tick.isWeekend ? "weekend" : ""}">${formatTick(tick)}</span></div>`).join("")}
-      ${calendarContext.months.map((month) => `<span class="calendar-context month" style="left:${month.x}px">${month.label}</span>`).join("")}
-      ${calendarContext.weeks.map((week) => `<span class="calendar-context week" style="left:${week.x}px">${week.label}</span>`).join("")}
+      <div class="calendar-months">${calendarContext.months.map((month, index) => `<span class="calendar-context month" style="left:${month.x}px;width:${(calendarContext.months[index + 1]?.x || scale.width) - month.x}px">${month.label}</span>`).join("")}</div>
+      <div class="calendar-weeks">${calendarContext.weeks.map((week, index) => `<span class="calendar-context week" style="left:${week.x}px;width:${(calendarContext.weeks[index + 1]?.x || scale.width) - week.x}px">${week.label}</span>`).join("")}</div>
       <div class="axis" style="width:${scale.width}px"></div>
       ${todayX >= 0 && todayX <= scale.width ? `<div class="today" style="left:${todayX}px"><span>Aujourd'hui</span></div>` : ""}
       ${milestones.map((item) => `<button class="milestone ${item.side} ${item.id === state.selectedItemId ? "selected" : ""}" style="left:${item.x}px;--card-top:${item.cardTop}px;--milestone-depth:${100 - item.level};color:${colorValue(item.color)};" title="Double-cliquez pour modifier ${safe(item.label)}"><span class="milestone-card" data-item="${item.id}" style="background:${colorValue(item.color)};width:${item.width}px">${safe(item.label)}</span><span class="milestone-stem"></span></button>`).join("")}
       ${periods.map((item) => renderPeriod(item, scale)).join("")}
       ${timelineItems.filter(({ type }) => type === "annotation").map((item) => renderAnnotation(item, scale)).join("")}
-    </div></div>${state.readOnly ? "" : `<p class="hint">Clic droit sur la frise pour ajouter un element. Faites glisser une periode ou ses extremites pour modifier ses dates.</p><section class="element-list" aria-label="Elements de la frise"><div class="element-list-heading"><h2>Elements</h2><span>${timelineItems.length} element${timelineItems.length > 1 ? "s" : ""}</span></div>${chronologicalItems().map((item) => `<article class="element-row" data-item="${item.id}"><span class="element-color" style="--item-color:${colorValue(item.color)}"></span><div><strong>${safe(item.label)}</strong><span class="element-type">${item.type === "milestone" ? "Jalon" : item.type === "period" ? "Periode" : "Annotation"}</span></div><time>${itemDateLabel(item)}</time><div class="element-notes"><p>${safe(item.description || "Aucune description")}</p>${raciEntries(item).length ? `<dl class="raci-summary">${raciEntries(item).map(([role, people]) => `<div><dt>${role}</dt><dd>${safe(people)}</dd></div>`).join("")}</dl>` : ""}</div></article>`).join("")}</section>`}</section></div>`;
+    </div></div>${state.readOnly ? "" : `<p class="hint">Clic droit sur la frise pour ajouter un element. Faites glisser une periode ou ses extremites pour modifier ses dates.</p><section class="element-list" aria-label="Elements de la frise"><div class="element-list-heading"><h2>Elements</h2><span>${timelineItems.length} element${timelineItems.length > 1 ? "s" : ""}</span></div>${chronologicalItems().map((item) => `<article class="element-row" data-item="${item.id}"><span class="element-color" style="--item-color:${colorValue(item.color)}"></span><div><strong>${safe(item.label)}</strong><span class="element-type">${item.type === "milestone" ? "Jalon" : item.type === "period" ? "Periode" : "Annotation"}</span></div><time>${itemDateLabel(item)}</time><div class="element-notes"><p>${safe(item.description || "Aucune description")}</p>${itemLink(item)}${raciEntries(item).length ? `<dl class="raci-summary">${raciEntries(item).map(([role, people]) => `<div><dt>${role}</dt><dd>${safe(people)}</dd></div>`).join("")}</dl>` : ""}</div></article>`).join("")}</section>`}</section></div>`;
 }
 
 function renderPeriod(item, scale) {
@@ -164,7 +166,7 @@ function itemForm(item, mode = "item") {
   const isPeriod = item.type === "period" || item.type === "annotation";
   const raci = parseRaci(item.raci);
   const raciFields = item.type === "milestone" ? `<fieldset class="raci-fields wide"><legend>RACI</legend><label class="field">Responsable (R)<input name="raci_responsible" value="${safe(raci.responsible)}" placeholder="Marie Dupont"></label><label class="field">Approbateur (A)<input name="raci_accountable" value="${safe(raci.accountable)}" placeholder="Paul Martin"></label><label class="field">Consulte (C)<input name="raci_consulted" value="${safe(raci.consulted)}" placeholder="Equipe produit, client"></label><label class="field">Informe (I)<input name="raci_informed" value="${safe(raci.informed)}" placeholder="Direction, support"></label></fieldset>` : "";
-  return `<form data-form="item"><input type="hidden" name="id" value="${item.id || ""}"><input type="hidden" name="type" value="${item.type}"><div class="form-grid"><label class="field wide">Libelle<input required name="label" value="${safe(item.label || "")}" autofocus></label><label class="field wide">Description<textarea name="description" placeholder="Notes internes, contexte ou details...">${safe(item.description || "")}</textarea></label><label class="field">Date de debut<input required type="date" name="start_date" value="${item.start_date || state.contextDate}"></label>${isPeriod ? `<label class="field">Date de fin<input required type="date" name="end_date" value="${item.end_date || state.contextDate}"></label>` : ""}${raciFields}${item.type === "period" ? `<label class="field">Rendu<select name="render_mode"><option value="bracket" ${item.render_mode !== "rectangle" ? "selected" : ""}>Accolade</option><option value="rectangle" ${item.render_mode === "rectangle" ? "selected" : ""}>Rectangle</option></select></label>` : ""}${colorPalette(item.color || "blue")}</div><div class="modal-actions">${item.id ? `<button class="command-btn danger" type="button" data-action="delete-item" data-item="${item.id}">Supprimer</button>` : "<span></span>"}<div class="right"><button class="command-btn" type="button" data-action="close-modal">Annuler</button><button class="command-btn primary">${mode === "create" ? "Ajouter" : "Enregistrer"}</button></div></div></form>`;
+  return `<form data-form="item"><input type="hidden" name="id" value="${item.id || ""}"><input type="hidden" name="type" value="${item.type}"><div class="form-grid"><label class="field wide">Libelle<input required name="label" value="${safe(item.label || "")}" autofocus></label><label class="field wide">Description<textarea name="description" placeholder="Notes internes, contexte ou details...">${safe(item.description || "")}</textarea></label><label class="field">Alias du lien<input name="link_alias" maxlength="200" value="${safe(item.link_alias || "")}" placeholder="Documentation projet"></label><label class="field">Lien hypertexte<input type="url" name="link_url" maxlength="2000" value="${safe(item.link_url || "")}" placeholder="https://..."></label><label class="field">Date de debut<input required type="date" name="start_date" value="${item.start_date || state.contextDate}"></label>${isPeriod ? `<label class="field">Date de fin<input required type="date" name="end_date" value="${item.end_date || state.contextDate}"></label>` : ""}${raciFields}${item.type === "period" ? `<label class="field">Rendu<select name="render_mode"><option value="bracket" ${item.render_mode !== "rectangle" ? "selected" : ""}>Accolade</option><option value="rectangle" ${item.render_mode === "rectangle" ? "selected" : ""}>Rectangle</option></select></label>` : ""}${colorPalette(item.color || "blue")}</div><div class="modal-actions">${item.id ? `<button class="command-btn danger" type="button" data-action="delete-item" data-item="${item.id}">Supprimer</button>` : "<span></span>"}<div class="right"><button class="command-btn" type="button" data-action="close-modal">Annuler</button><button class="command-btn primary">${mode === "create" ? "Ajouter" : "Enregistrer"}</button></div></div></form>`;
 }
 
 function recurrenceForm(type) {
@@ -199,6 +201,7 @@ function selectTimelineItem(itemId) {
   app.querySelectorAll(".selected").forEach((element) => element.classList.remove("selected"));
   const element = app.querySelector(`.milestone-card[data-item="${itemId}"], [data-item="${itemId}"]`);
   (element?.closest(".milestone") || element)?.classList.add("selected");
+  showHoverDetails(itemId);
 }
 function centerTimelineItem(itemId) {
   const frame = document.querySelector("#timeline-frame");
@@ -210,12 +213,13 @@ function showHoverDetails(itemId) {
   const item = state.store.items.find(({ id }) => id === itemId);
   const details = document.querySelector("#hover-details");
   if (!item || !details) return;
-  details.innerHTML = `<strong>${safe(item.label)}</strong><span>${itemDateLabel(item)}</span>${item.description ? `<p>${safe(item.description)}</p>` : ""}${raciSummary(item) ? `<p class="hover-raci">${safe(raciSummary(item))}</p>` : ""}`;
+  details.innerHTML = `<strong>${safe(item.label)}</strong><span>${itemDateLabel(item)}</span>${item.description ? `<p>${safe(item.description)}</p>` : ""}${itemLink(item, "hover-link")}${raciSummary(item) ? `<p class="hover-raci">${safe(raciSummary(item))}</p>` : ""}`;
   details.classList.add("visible");
 }
 function hideHoverDetails() { document.querySelector("#hover-details")?.classList.remove("visible"); }
 
 document.addEventListener("click", (event) => {
+  if (event.target.closest("[data-item-link]")) return;
   const selectedColor = event.target.closest("[data-color]")?.dataset.color;
   if (selectedColor) {
     const palette = event.target.closest(".color-palette");
@@ -228,6 +232,7 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("#timeline-canvas") && !event.target.closest("[data-item]")) {
     state.selectedItemId = null;
     app.querySelectorAll(".selected").forEach((element) => element.classList.remove("selected"));
+    hideHoverDetails();
   }
   const actionElement = event.target.closest("[data-action]");
   const action = actionElement?.dataset.action;
@@ -237,7 +242,7 @@ document.addEventListener("click", (event) => {
   if (action === "account") { const identity = state.user.user_metadata?.full_name || state.user.email || "Utilisateur connecte"; openModal("Compte", `<p>${safe(identity)}</p><div class="modal-actions"><span></span><button class="command-btn danger" data-action="logout">Se deconnecter</button></div>`); return; }
   if (action === "logout") { logout().then(() => { localStorage.removeItem(ACCESS_MODE_KEY); repository = null; state.mode = null; state.user = null; state.store = { timelines: [], items: [], recurrences: [] }; state.activeTimelineId = null; closeModal(); renderAccessScreen(); }).catch((error) => openModal("Deconnexion", `<p>${safe(error.message)}</p>`)); return; }
   if (action === "zoom-in") { state.zoom = Math.min(34, state.zoom + 2); render(); }
-  if (action === "zoom-out") { state.zoom = Math.max(1, state.zoom - 2); render(); }
+  if (action === "zoom-out") { state.zoom = Math.max(minimumZoom(), state.zoom - 2); render(); }
   if (action === "today") scrollToToday();
   if (action === "edit-timeline-title") openModal("Modifier le titre", timelineTitleForm(activeTimeline()));
   if (action === "save-timeline") {
@@ -304,11 +309,11 @@ modalRoot.addEventListener("change", (event) => {
 app.addEventListener("contextmenu", (event) => { if (!state.readOnly && event.target.closest("#timeline-canvas")) { event.preventDefault(); showContextMenu(event); } });
 app.addEventListener("pointerover", (event) => {
   const itemId = event.target.closest("[data-item]")?.dataset.item;
-  if (itemId) showHoverDetails(itemId);
+  if (itemId && !state.selectedItemId) showHoverDetails(itemId);
 });
 app.addEventListener("pointerout", (event) => {
   const element = event.target.closest("[data-item]");
-  if (element && !element.contains(event.relatedTarget)) hideHoverDetails();
+  if (element && !state.selectedItemId && !element.contains(event.relatedTarget)) hideHoverDetails();
 });
 document.addEventListener("click", (event) => { if (!event.target.closest(".context-menu") && !event.target.closest("#timeline-canvas")) { const menu = modalRoot.querySelector(".context-menu"); if (menu) menu.remove(); } });
 let zoomWheelDelta = 0;
@@ -329,7 +334,7 @@ app.addEventListener("wheel", (event) => {
   const focusDate = xToDate(event.clientX - canvasBounds.left, previousScale);
   const zoomStep = zoomWheelDelta < 0 ? 1 : -1;
   zoomWheelDelta = 0;
-  const nextZoom = Math.max(1, Math.min(34, state.zoom + zoomStep));
+  const nextZoom = Math.max(minimumZoom(), Math.min(34, state.zoom + zoomStep));
   if (nextZoom === state.zoom) return;
 
   state.zoom = nextZoom;

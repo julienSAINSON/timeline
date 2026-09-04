@@ -44,6 +44,8 @@ create table if not exists public.tl_items (
   type public.tl_item_type not null,
   label text not null check (char_length(label) between 1 and 500),
   description text not null default '' check (char_length(description) <= 5000),
+  link_alias text not null default '' check (char_length(link_alias) <= 200),
+  link_url text not null default '' check (char_length(link_url) <= 2000),
   start_date date not null,
   end_date date,
   color text not null check (color in ('blue', 'green', 'orange', 'red', 'violet', 'rose') or color ~ '^#[0-9A-Fa-f]{6}$'),
@@ -55,6 +57,8 @@ create table if not exists public.tl_items (
 );
 
 alter table public.tl_items add column if not exists description text not null default '' check (char_length(description) <= 5000);
+alter table public.tl_items add column if not exists link_alias text not null default '' check (char_length(link_alias) <= 200);
+alter table public.tl_items add column if not exists link_url text not null default '' check (char_length(link_url) <= 2000);
 alter table public.tl_items add column if not exists render_mode text not null default 'bracket' check (render_mode in ('bracket', 'rectangle'));
 
 create index if not exists tl_timelines_user_id_idx on public.tl_timelines(user_id);

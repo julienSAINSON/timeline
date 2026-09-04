@@ -56,7 +56,7 @@ export class SupabaseTimelineRepository {
   async deleteItem(store, itemId) { store.items = store.items.filter(({ id }) => id !== itemId); }
   async saveStore(store) {
     const timelineRows = store.timelines.map(({ id, name, start_date, end_date, is_sandbox = this.isSandbox, is_public, public_token }) => ({ id, name, start_date, end_date, is_sandbox, is_public, public_token, ...(is_sandbox ? { user_id: null } : {}) }));
-    const itemRows = store.items.map(({ id, timeline_id, type, label, description = "", start_date, end_date, color, render_mode = "bracket", recurrence_id }) => ({ id, timeline_id, type, label, description, start_date, end_date, color, render_mode, recurrence_id }));
+    const itemRows = store.items.map(({ id, timeline_id, type, label, description = "", link_alias = "", link_url = "", start_date, end_date, color, render_mode = "bracket", recurrence_id }) => ({ id, timeline_id, type, label, description, link_alias, link_url, start_date, end_date, color, render_mode, recurrence_id }));
     const recurrenceRows = store.recurrences.map(({ id, timeline_id, type, frequency, interval, occurrences, start_date, duration, duration_unit }) => ({ id, timeline_id, type, frequency, interval, occurrences, start_date, duration, duration_unit }));
     const timelineIds = store.timelines.map(({ id }) => id);
     const itemIds = store.items.filter(({ timeline_id }) => timelineIds.includes(timeline_id)).map(({ id }) => id);
