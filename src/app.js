@@ -259,7 +259,7 @@ async function deleteActiveTimeline(timelineId) {
   }
 }
 async function copyShareLink(button) {
-  const input = button.closest(".share-link")?.querySelector("input");
+  const input = button.closest(".share-link")?.querySelector("input, textarea");
   if (!input) return;
   try { await navigator.clipboard.writeText(input.value); }
   catch { input.select(); document.execCommand("copy"); input.setSelectionRange(0, 0); }
@@ -350,6 +350,7 @@ document.addEventListener("click", (event) => {
   if (action === "close-modal") closeModal();
   if (action === "delete-item") { const itemId = event.target.dataset.item; deleteItem(state.store, itemId); if (state.selectedItemId === itemId) state.selectedItemId = null; if (state.detailsItemId === itemId) state.detailsItemId = null; closeModal(); render(); }
   if (action === "share" && !isCombinedView()) { const timeline = activeTimeline(); timeline.is_public = true; markDirty(); openModal("Lien de consultation", `<div class="share-link"><input readonly value="${location.origin}${location.pathname}?view=${timeline.public_token}"><button class="icon-btn copy-link-button" data-action="copy-share-link" title="Copier le lien" aria-label="Copier le lien"><span class="copy-link-icon" aria-hidden="true"></span></button><button class="command-btn" data-action="close-modal">Fermer</button></div>`); }
+    if (action === "share" && !isCombinedView()) { const timeline = activeTimeline(); const publicUrl = `${location.origin}${location.pathname}?view=${timeline.public_token}`; const embedCode = `<iframe src="${publicUrl}" width="100%" height="100%" title="${safe(timeline.name)}" loading="lazy" style="border:0;"></iframe>`; timeline.is_public = true; markDirty(); openModal("Partager la frise", `<label class="field share-field">Lien de consultation<div class="share-link"><input readonly value="${publicUrl}"><button class="icon-btn copy-link-button" data-action="copy-share-link" title="Copier le lien" aria-label="Copier le lien"><span class="copy-link-icon" aria-hidden="true"></span></button></div></label><label class="field share-field">Code d'integration<div class="share-link"><textarea readonly rows="4">${safe(embedCode)}</textarea><button class="icon-btn copy-link-button" data-action="copy-share-link" title="Copier le code HTML" aria-label="Copier le code HTML"><span class="copy-link-icon" aria-hidden="true"></span></button></div></label><div class="modal-actions"><span></span><button class="command-btn" data-action="close-modal">Fermer</button></div>`); }
   if (action === "copy-share-link") copyShareLink(event.target.closest("button"));
   const timelineId = event.target.closest("[data-timeline]")?.dataset.timeline;
   if (timelineId) { state.activeTimelineId = timelineId; state.selectedTimelineIds = [timelineId]; state.viewTimelineIds = null; state.selectedItemId = null; state.detailsItemId = null; render(); }
