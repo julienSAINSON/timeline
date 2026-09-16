@@ -14,6 +14,8 @@ create table if not exists public.tl_timelines (
   is_sandbox boolean not null default false,
   is_public boolean not null default false,
   public_token uuid not null default gen_random_uuid() unique,
+  template_id uuid,
+  template_start_date date,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check ((is_sandbox and user_id is null) or (not is_sandbox and user_id is not null))
@@ -61,9 +63,31 @@ create table if not exists public.tl_items (
 alter table public.tl_items add column if not exists description text not null default '' check (char_length(description) <= 5000);
 alter table public.tl_items add column if not exists link_alias text not null default '' check (char_length(link_alias) <= 200);
 alter table public.tl_items add column if not exists link_url text not null default '' check (char_length(link_url) <= 2000);
+alter table public.tl_items add column if not exists time text not null default '' check (time ~ '^$|^([01][0-9]|2[0-3]):[0-5][0-9]$');
 alter table public.tl_items add column if not exists render_mode text not null default 'bracket' check (render_mode in ('bracket', 'rectangle'));
 
 create index if not exists tl_timelines_user_id_idx on public.tl_timelines(user_id);
+create table if not exists public.tl_templates (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade default auth.uid(),
+  name text not null check (char_length(name) between 1 and 120),
+  description text not null default '' check (char_length(description) <= 2000),
+  iteration_duration_days integer not null check (iteration_duration_days > 0),
+  number_of_iterations integer not null check (number_of_iterations between 1 and 1000),
+  iteration_label text not null default 'Iteration',
+  iteration_color text not null default 'blue',
+  iteration_render_mode text not null default 'rectangle' check (iteration_render_mode in ('bracket', 'rectangle')),
+  milestones jsonb not null default '[]'::jsonb,
+  is_sandbox boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check ((is_sandbox and user_id is null) or (not is_sandbox and user_id is not null))
+);
+alter table public.tl_templates alter column user_id drop not null;
+create index if not exists tl_templates_user_id_idx on public.tl_templates(user_id);
+alter table public.tl_timelines add column if not exists template_id uuid;
+alter table public.tl_timelines add column if not exists template_start_date date;
+do $$ begin alter table public.tl_timelines add constraint tl_timelines_template_fk foreign key (template_id) references public.tl_templates(id) on delete set null; exception when duplicate_object then null; end $$;
 create table if not exists public.tl_raci_assignments (
   id uuid primary key default gen_random_uuid(),
   item_id uuid not null references public.tl_items(id) on delete cascade,
@@ -91,17 +115,21 @@ drop trigger if exists tl_recurrences_updated_at on public.tl_recurrences;
 create trigger tl_timelines_updated_at before update on public.tl_timelines for each row execute function public.set_updated_at();
 create trigger tl_items_updated_at before update on public.tl_items for each row execute function public.set_updated_at();
 create trigger tl_recurrences_updated_at before update on public.tl_recurrences for each row execute function public.set_updated_at();
+drop trigger if exists tl_templates_updated_at on public.tl_templates;
+create trigger tl_templates_updated_at before update on public.tl_templates for each row execute function public.set_updated_at();
 
 alter table public.tl_timelines enable row level security;
 alter table public.tl_items enable row level security;
 alter table public.tl_raci_assignments enable row level security;
 alter table public.tl_recurrences enable row level security;
+alter table public.tl_templates enable row level security;
 
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on public.tl_timelines to anon, authenticated;
 grant select, insert, update, delete on public.tl_items to anon, authenticated;
 grant select, insert, update, delete on public.tl_raci_assignments to anon, authenticated;
 grant select, insert, update, delete on public.tl_recurrences to anon, authenticated;
+grant select, insert, update, delete on public.tl_templates to anon, authenticated;
 
 drop policy if exists "Owners manage their timelines" on public.tl_timelines;
 drop policy if exists "Sandbox timelines are shared" on public.tl_timelines;
@@ -115,6 +143,8 @@ drop policy if exists "Public RACI assignments are readable" on public.tl_raci_a
 drop policy if exists "Owners manage their recurrences" on public.tl_recurrences;
 drop policy if exists "Sandbox recurrences are shared" on public.tl_recurrences;
 drop policy if exists "Public recurrences are readable" on public.tl_recurrences;
+drop policy if exists "Owners manage their templates" on public.tl_templates;
+drop policy if exists "Sandbox templates are shared" on public.tl_templates;
 
 create policy "Owners manage their timelines" on public.tl_timelines for all using (not is_sandbox and user_id = auth.uid()) with check (not is_sandbox and user_id = auth.uid());
 create policy "Sandbox timelines are shared" on public.tl_timelines for all using (is_sandbox) with check (is_sandbox and user_id is null);
@@ -128,3 +158,5 @@ create policy "Public RACI assignments are readable" on public.tl_raci_assignmen
 create policy "Owners manage their recurrences" on public.tl_recurrences for all using (exists (select 1 from public.tl_timelines where id = timeline_id and not is_sandbox and user_id = auth.uid())) with check (exists (select 1 from public.tl_timelines where id = timeline_id and not is_sandbox and user_id = auth.uid()));
 create policy "Sandbox recurrences are shared" on public.tl_recurrences for all using (exists (select 1 from public.tl_timelines where id = timeline_id and is_sandbox)) with check (exists (select 1 from public.tl_timelines where id = timeline_id and is_sandbox));
 create policy "Public recurrences are readable" on public.tl_recurrences for select using (exists (select 1 from public.tl_timelines where id = timeline_id and is_public));
+create policy "Owners manage their templates" on public.tl_templates for all using (not is_sandbox and user_id = auth.uid()) with check (not is_sandbox and user_id = auth.uid());
+create policy "Sandbox templates are shared" on public.tl_templates for all using (is_sandbox) with check (is_sandbox and user_id is null);

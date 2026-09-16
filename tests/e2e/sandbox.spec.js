@@ -71,3 +71,24 @@ test("respecte les bornes de zoom et conserve un affichage utilisable", async ({
   await expect(page.locator(".zoom-readout")).toHaveText("5px/j");
   await expect(page.locator("#timeline-canvas")).toBeVisible();
 });
+
+test("cree une frise depuis un modele de cadence", async ({ page }) => {
+  await startSandbox(page);
+  await page.getByRole("button", { name: "Modeles", exact: true }).click();
+  await page.getByRole("button", { name: "+ Creer un modele" }).click();
+  await page.locator('input[name="name"]').fill("Agile 2 semaines");
+  await page.locator('input[name="iterationDurationDays"]').fill("14");
+  await page.locator('input[name="numberOfIterations"]').fill("3");
+  await page.locator('input[name="milestone_name"]').fill("System Demo");
+  await page.locator('select[name="milestone_position"]').selectOption("week-day");
+  await page.locator('input[name="milestone_week"]').fill("2");
+  await page.locator('input[name="milestone_day"]').fill("3");
+  await page.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await page.getByRole("button", { name: "Utiliser", exact: true }).click();
+  await page.locator('input[name="name"]').fill("Planning Agile");
+  await page.locator('input[name="start_date"]').fill("2026-10-05");
+  await page.locator('input[name="number_of_iterations"]').fill("3");
+  await page.getByRole("button", { name: "Creer", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Planning Agile" })).toBeVisible();
+  await expect(page.getByText("System Demo", { exact: true })).toHaveCount(6);
+});

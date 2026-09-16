@@ -3,12 +3,13 @@ import { DEMO_ITEMS, DEMO_TIMELINE } from "./data.js";
 const STORAGE_KEY = "timeline-beta-v1";
 
 function seed() {
-  return { timelines: [DEMO_TIMELINE], items: DEMO_ITEMS, recurrences: [] };
+  return { timelines: [DEMO_TIMELINE], items: DEMO_ITEMS, recurrences: [], templates: [] };
 }
 
 export function loadStore() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || seed();
+    const store = JSON.parse(localStorage.getItem(STORAGE_KEY)) || seed();
+    return { ...store, templates: store.templates || [] };
   } catch {
     return seed();
   }

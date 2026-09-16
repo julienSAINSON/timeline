@@ -66,3 +66,7 @@ Sans session Google, l'utilisateur choisit explicitement le bac a sable. Ses fri
 5. Ajoutez l'URL Pages finale a la configuration OAuth Google et remplacez `supabaseRedirectTo` dans la configuration publiee par cette URL.
 
 Pour un partage en lecture seule dans cette BETA, activez **Partager** puis utilisez le lien genere avec le parametre `?view=<public_token>`, ou copiez le code iframe fourni. Une vue combinee utilise plusieurs jetons dans le meme parametre, separes par des virgules. Le mode n'affiche aucune commande d'edition. Une route propre `/view/:public_token` pourra etre introduite avec un routeur SPA et une regle de reecriture Pages lorsque le partage public passera en phase active.
+
+## Modeles de cadence
+
+Le bouton **Modeles** permet de definir une structure relative (duree d'une iteration, nombre d'iterations et jalons). Lors de la creation d'une frise, choisissez un modele et une date de debut : les periodes et jalons sont alors generes comme des elements independants. Modifier la frise ne modifie pas le modele d'origine.

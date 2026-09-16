@@ -1,0 +1,58 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { generateTimelineFromTemplate } from "../../src/engine/template-generator.js";
+
+beforeEach(() => {
+  let index = 0;
+  vi.stubGlobal("crypto", { randomUUID: () => `template-item-${++index}` });
+});
+
+const agileTemplate = {
+  id: "agile-14",
+  name: "Iteration Agile 2 semaines",
+  iterationDurationDays: 14,
+  numberOfIterations: 3,
+  milestones: [
+    { id: "demo", name: "System Demo", iteration: null, time: "14:00", position: { kind: "week-day", week: 2, dayOfWeek: 3 } },
+    { id: "retro", name: "Retrospective", iteration: null, position: { kind: "last-day" } },
+  ],
+};
+
+describe("generateTimelineFromTemplate", () => {
+  it("genere des iterations de 14 jours", () => {
+    const result = generateTimelineFromTemplate(agileTemplate, "2026-10-05");
+
+    expect(result.start_date).toBe("2026-10-05");
+    expect(result.end_date).toBe("2026-11-15");
+    expect(result.items.filter(({ type }) => type === "period").map(({ start_date, end_date }) => [start_date, end_date])).toEqual([
+      ["2026-10-05", "2026-10-18"],
+      ["2026-10-19", "2026-11-01"],
+      ["2026-11-02", "2026-11-15"],
+    ]);
+  });
+
+  it("place le mercredi de la semaine 2 et le dernier jour", () => {
+    const result = generateTimelineFromTemplate(agileTemplate, "2026-10-05");
+
+    expect(result.items.filter(({ label }) => label === "System Demo").map(({ start_date, time }) => [start_date, time])).toEqual([["2026-10-14", "14:00"], ["2026-10-28", "14:00"], ["2026-11-11", "14:00"]]);
+    expect(result.items.filter(({ label }) => label === "Retrospective").map(({ start_date }) => start_date)).toEqual(["2026-10-18", "2026-11-01", "2026-11-15"]);
+  });
+
+  it("traverse les mois et les annees sans modifier le modele", () => {
+    const template = structuredClone(agileTemplate);
+    const snapshot = structuredClone(template);
+    const result = generateTimelineFromTemplate(template, "2026-12-21", { numberOfIterations: 2 });
+
+    expect(result.end_date).toBe("2027-01-17");
+    expect(template).toEqual(snapshot);
+  });
+
+  it("supporte le jour N et plusieurs jalons dans la meme iteration", () => {
+    const template = { ...agileTemplate, numberOfIterations: 1, milestones: [
+      { name: "Jour 3", iteration: 1, position: { kind: "day-of-iteration", day: 3 } },
+      { name: "Debut", iteration: 1, position: { kind: "first-day" } },
+    ] };
+    const result = generateTimelineFromTemplate(template, "2026-10-05");
+
+    expect(result.items.filter(({ type }) => type === "milestone").map(({ start_date }) => start_date)).toEqual(["2026-10-07", "2026-10-05"]);
+  });
+});

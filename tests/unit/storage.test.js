@@ -25,9 +25,16 @@ describe("storage local", () => {
 
   it("sauvegarde et recharge un store", async () => {
     const { loadStore, saveStore } = await import("../../src/storage.js");
-    const store = { timelines: [{ id: "timeline-1" }], items: [], recurrences: [] };
+    const store = { timelines: [{ id: "timeline-1" }], items: [], recurrences: [], templates: [] };
     saveStore(store);
     expect(loadStore()).toEqual(store);
+  });
+
+  it("ajoute une collection de modeles aux anciens stores sans changer leurs donnees", async () => {
+    const { loadStore } = await import("../../src/storage.js");
+    values.set("timeline-beta-v1", JSON.stringify({ timelines: [{ id: "old" }], items: [{ id: "item" }], recurrences: [] }));
+
+    expect(loadStore()).toEqual({ timelines: [{ id: "old" }], items: [{ id: "item" }], recurrences: [], templates: [] });
   });
 
   it("revient au jeu de demonstration si le JSON est corrompu", async () => {

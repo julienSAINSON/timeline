@@ -2,7 +2,7 @@ import { getSupabaseClient } from "../supabase/auth/auth.js";
 import { loadStore, saveStore } from "./storage.js";
 import { DEMO_ITEMS, DEMO_TIMELINE } from "./data.js";
 
-function emptyStore() { return { timelines: [], items: [], recurrences: [] }; }
+function emptyStore() { return { timelines: [], items: [], recurrences: [], templates: [] }; }
 function raciAssignments(items) {
   return items.flatMap((item) => {
     if (item.type !== "milestone" || !item.raci) return [];
@@ -17,6 +17,17 @@ function enrichRaci(items, assignments) {
     if (raci) raci[role] = [...(raci[role] || []), person];
   });
   return items.map((item) => ({ ...item, raci: JSON.stringify(Object.fromEntries(Object.entries(grouped.get(item.id) || {}).map(([role, people]) => [role, people.join(", ")])) ) }));
+}
+function normalizeTemplate(template) {
+  return {
+    ...template,
+    iterationDurationDays: template.iterationDurationDays ?? template.iteration_duration_days,
+    numberOfIterations: template.numberOfIterations ?? template.number_of_iterations,
+    iterationLabel: template.iterationLabel ?? template.iteration_label,
+    iterationColor: template.iterationColor ?? template.iteration_color,
+    iterationRenderMode: template.iterationRenderMode ?? template.iteration_render_mode,
+    milestones: template.milestones || [],
+  };
 }
 
 export class LocalTimelineRepository {
@@ -35,14 +46,15 @@ export class LocalTimelineRepository {
 export class SupabaseTimelineRepository {
   constructor(user, isSandbox = false) { this.user = user; this.isSandbox = isSandbox; this.client = getSupabaseClient(); }
   async loadStore() {
-    const [timelines, recurrences, items, assignments] = await Promise.all([
-      this.client.from("tl_timelines").select("id,name,start_date,end_date,theme,is_sandbox,is_public,public_token").eq("is_sandbox", this.isSandbox).order("created_at"),
+    const [timelines, recurrences, items, assignments, templates] = await Promise.all([
+      this.client.from("tl_timelines").select("id,name,start_date,end_date,theme,is_sandbox,is_public,public_token,template_id,template_start_date").eq("is_sandbox", this.isSandbox).order("created_at"),
       this.client.from("tl_recurrences").select("*").order("created_at"),
       this.client.from("tl_items").select("*").order("start_date"),
-      this.client.from("tl_raci_assignments").select("item_id,role,person")
+      this.client.from("tl_raci_assignments").select("item_id,role,person"),
+      this.client.from("tl_templates").select("*").eq("is_sandbox", this.isSandbox).order("created_at")
     ]);
-    [timelines, recurrences, items, assignments].forEach(({ error }) => { if (error) throw new Error(error.message); });
-    const store = { timelines: timelines.data || [], recurrences: recurrences.data || [], items: enrichRaci(items.data || [], assignments.data || []) };
+    [timelines, recurrences, items, assignments, templates].forEach(({ error }) => { if (error) throw new Error(error.message); });
+    const store = { timelines: timelines.data || [], recurrences: recurrences.data || [], items: enrichRaci(items.data || [], assignments.data || []), templates: (templates.data || []).map(normalizeTemplate) };
     if (this.isSandbox && !store.timelines.length) return this.createSandboxDemo();
     return store;
   }
@@ -61,11 +73,15 @@ export class SupabaseTimelineRepository {
   async updateItem(store, item) { const index = store.items.findIndex(({ id }) => id === item.id); store.items[index] = item; }
   async deleteItem(store, itemId) { store.items = store.items.filter(({ id }) => id !== itemId); }
   async saveStore(store) {
-    const timelineRows = store.timelines.map(({ id, name, start_date, end_date, theme = "atelier", is_sandbox = this.isSandbox, is_public, public_token }) => ({ id, name, start_date, end_date, theme, is_sandbox, is_public, public_token, ...(is_sandbox ? { user_id: null } : {}) }));
-    const itemRows = store.items.map(({ id, timeline_id, type, label, description = "", link_alias = "", link_url = "", start_date, end_date, color, render_mode = "bracket", recurrence_id }) => ({ id, timeline_id, type, label, description, link_alias, link_url, start_date, end_date, color, render_mode, recurrence_id }));
+    const timelineRows = store.timelines.map(({ id, name, start_date, end_date, theme = "atelier", is_sandbox = this.isSandbox, is_public, public_token, template_id = null, template_start_date = null }) => ({ id, name, start_date, end_date, theme, is_sandbox, is_public, public_token, template_id, template_start_date, ...(is_sandbox ? { user_id: null } : {}) }));
+    const itemRows = store.items.map(({ id, timeline_id, type, label, description = "", time = "", link_alias = "", link_url = "", start_date, end_date, color, render_mode = "bracket", recurrence_id }) => ({ id, timeline_id, type, label, description, time, link_alias, link_url, start_date, end_date, color, render_mode, recurrence_id }));
     const recurrenceRows = store.recurrences.map(({ id, timeline_id, type, frequency, interval, occurrences, start_date, duration, duration_unit }) => ({ id, timeline_id, type, frequency, interval, occurrences, start_date, duration, duration_unit }));
+    const templateRows = (store.templates || []).map(({ id, name, description = "", iterationDurationDays, numberOfIterations, iterationLabel = "Iteration", iterationColor = "blue", iterationRenderMode = "rectangle", milestones = [], is_sandbox = this.isSandbox }) => ({ id, name, description, iteration_duration_days: iterationDurationDays, number_of_iterations: numberOfIterations, iteration_label: iterationLabel, iteration_color: iterationColor, iteration_render_mode: iterationRenderMode, milestones, is_sandbox, ...(is_sandbox ? { user_id: null } : {}) }));
     const timelineIds = store.timelines.map(({ id }) => id);
     const itemIds = store.items.filter(({ timeline_id }) => timelineIds.includes(timeline_id)).map(({ id }) => id);
+    const deletedTemplates = await this.client.from("tl_templates").delete().eq("is_sandbox", this.isSandbox);
+    if (deletedTemplates.error) throw new Error(deletedTemplates.error.message);
+    if (templateRows.length) { const { error } = await this.client.from("tl_templates").upsert(templateRows); if (error) throw new Error(error.message); }
     if (timelineRows.length) { const { error } = await this.client.from("tl_timelines").upsert(timelineRows); if (error) throw new Error(error.message); }
     if (timelineIds.length) {
       if (itemIds.length) { const assignments = await this.client.from("tl_raci_assignments").delete().in("item_id", itemIds); if (assignments.error) throw new Error(assignments.error.message); }
@@ -104,7 +120,7 @@ export class PublicTimelineRepository {
     ]);
     [recurrences, items, assignments].forEach(({ error }) => { if (error) throw new Error(error.message); });
     const itemIds = new Set((items.data || []).map(({ id }) => id));
-    return { timelines, recurrences: recurrences.data || [], items: enrichRaci(items.data || [], (assignments.data || []).filter(({ item_id }) => itemIds.has(item_id))) };
+    return { timelines, recurrences: recurrences.data || [], items: enrichRaci(items.data || [], (assignments.data || []).filter(({ item_id }) => itemIds.has(item_id))), templates: [] };
   }
 }
 
