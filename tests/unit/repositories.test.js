@@ -33,6 +33,7 @@ beforeEach(() => {
     tl_recurrences: { data: [], error: null },
     tl_items: { data: [], error: null },
     tl_raci_assignments: { data: [], error: null },
+    tl_templates: { data: [], error: null },
   };
 });
 
@@ -64,6 +65,26 @@ describe("repositories Supabase", () => {
       { item_id: "item-1", role: "responsible", person: "Alice" },
       { item_id: "item-1", role: "responsible", person: "Bruno" },
     ]) }));
+  });
+
+  it("charge et persiste les modeles de cadence sans dates absolues", async () => {
+    responses.tl_timelines.data = [{ id: "timeline-1", is_sandbox: false }];
+    responses.tl_templates.data = [{
+      id: "template-1",
+      name: "Agile",
+      iteration_duration_days: 14,
+      number_of_iterations: 3,
+      iteration_label: "Iteration",
+      iteration_color: "blue",
+      iteration_render_mode: "rectangle",
+      milestones: [{ name: "Demo", position: { kind: "week-day", week: 2, dayOfWeek: 3 } }],
+    }];
+    const repository = new SupabaseTimelineRepository({ id: "user-1" });
+    const store = await repository.loadStore();
+
+    expect(store.templates[0]).toMatchObject({ id: "template-1", iterationDurationDays: 14, numberOfIterations: 3 });
+    await repository.saveStore({ timelines: [], items: [], recurrences: [], templates: [store.templates[0]] });
+    expect(calls).toContainEqual(expect.objectContaining({ operation: "upsert", table: "tl_templates", rows: [expect.objectContaining({ iteration_duration_days: 14, number_of_iterations: 3 })] }));
   });
 
   it("charge une consultation publique et filtre ses affectations RACI", async () => {

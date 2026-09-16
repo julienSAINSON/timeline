@@ -35,4 +35,15 @@ describe("timeline-scale", () => {
     expect(generateTicks(weekScale)[0]).toMatchObject({ date: "2026-01-05", mode: "week" });
     expect(generateCalendarContext(weekScale).weeks).toEqual([]);
   });
+
+  it("affiche le mois qui contient le debut d'une frise", () => {
+    const scale = createScale({ start_date: "2026-10-05", end_date: "2026-12-31" }, 3);
+    const months = generateCalendarContext(scale).months;
+
+    expect(months.map(({ label, x }) => ({ label, x }))).toEqual([
+      { label: "octobre 2026", x: 0 },
+      { label: "novembre 2026", x: 81 },
+      { label: "decembre 2026", x: 171 },
+    ]);
+  });
 });

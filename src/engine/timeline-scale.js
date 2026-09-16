@@ -82,12 +82,10 @@ export function generateCalendarContext(scale) {
 
   const monthCursor = new Date(scale.start.getFullYear(), scale.start.getMonth(), 1);
   while (monthCursor <= scale.end) {
-    if (monthCursor >= scale.start) {
-      months.push({
-        x: dateToX(monthCursor, scale),
-        label: new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" }).format(monthCursor),
-      });
-    }
+    months.push({
+      x: Math.max(0, dateToX(monthCursor, scale)),
+      label: new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" }).format(monthCursor),
+    });
     monthCursor.setMonth(monthCursor.getMonth() + 1);
   }
   return { weeks, months };
