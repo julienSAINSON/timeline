@@ -27,6 +27,7 @@ function normalizeTemplate(template) {
     iterationColor: template.iterationColor ?? template.iteration_color,
     iterationRenderMode: template.iterationRenderMode ?? template.iteration_render_mode,
     milestones: template.milestones || [],
+    periods: template.periods || [],
   };
 }
 
@@ -76,7 +77,7 @@ export class SupabaseTimelineRepository {
     const timelineRows = store.timelines.map(({ id, name, start_date, end_date, theme = "atelier", is_sandbox = this.isSandbox, is_public, public_token, template_id = null, template_start_date = null }) => ({ id, name, start_date, end_date, theme, is_sandbox, is_public, public_token, template_id, template_start_date, ...(is_sandbox ? { user_id: null } : {}) }));
     const itemRows = store.items.map(({ id, timeline_id, type, label, description = "", time = "", link_alias = "", link_url = "", start_date, end_date, color, render_mode = "bracket", recurrence_id }) => ({ id, timeline_id, type, label, description, time, link_alias, link_url, start_date, end_date, color, render_mode, recurrence_id }));
     const recurrenceRows = store.recurrences.map(({ id, timeline_id, type, frequency, interval, occurrences, start_date, duration, duration_unit }) => ({ id, timeline_id, type, frequency, interval, occurrences, start_date, duration, duration_unit }));
-    const templateRows = (store.templates || []).map(({ id, name, description = "", iterationDurationDays, numberOfIterations, iterationLabel = "Iteration", iterationColor = "blue", iterationRenderMode = "rectangle", milestones = [], is_sandbox = this.isSandbox }) => ({ id, name, description, iteration_duration_days: iterationDurationDays, number_of_iterations: numberOfIterations, iteration_label: iterationLabel, iteration_color: iterationColor, iteration_render_mode: iterationRenderMode, milestones, is_sandbox, ...(is_sandbox ? { user_id: null } : {}) }));
+    const templateRows = (store.templates || []).map(({ id, name, description = "", iterationDurationDays, numberOfIterations, iterationLabel = "Iteration", iterationColor = "blue", iterationRenderMode = "rectangle", milestones = [], periods = [], is_sandbox = this.isSandbox }) => ({ id, name, description, iteration_duration_days: iterationDurationDays, number_of_iterations: numberOfIterations, iteration_label: iterationLabel, iteration_color: iterationColor, iteration_render_mode: iterationRenderMode, milestones, periods, is_sandbox, ...(is_sandbox ? { user_id: null } : {}) }));
     const timelineIds = store.timelines.map(({ id }) => id);
     const itemIds = store.items.filter(({ timeline_id }) => timelineIds.includes(timeline_id)).map(({ id }) => id);
     const deletedTemplates = await this.client.from("tl_templates").delete().eq("is_sandbox", this.isSandbox);

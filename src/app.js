@@ -1,7 +1,7 @@
 import { COLORS } from "./data.js";
 import { addDays, daysBetween, formatDate, formatHumanDate, parseDate } from "./engine/date-utils.js";
 import { layoutMilestones, positionMilestoneLanes } from "./engine/milestone-layout.js";
-import { layoutPeriods, periodWidth } from "./engine/period-layout.js";
+import { layoutPeriods, periodStartOffset, periodWidth } from "./engine/period-layout.js";
 import { generateOccurrences } from "./engine/recurrence.js";
 import { generateTimelineFromTemplate } from "./engine/template-generator.js";
 import { createScale, dateToX, formatTick, generateCalendarContext, generateTicks, xToDate } from "./engine/timeline-scale.js";
@@ -209,7 +209,7 @@ function render() {
 }
 
 function renderPeriod(item, scale) {
-  const x = dateToX(item.start_date, scale);
+  const x = dateToX(item.start_date, scale) + periodStartOffset();
   const width = periodWidth(item, scale);
   const labelFitsInside = width >= item.label.length * 7.5 + 28;
   return `<button class="period ${item.render_mode === "rectangle" ? "rectangle" : ""} ${item.id === state.selectedItemId ? "selected" : ""}" data-item="${item.id}" style="left:${x}px;width:${width}px;--item-color:${colorValue(item.color)};color:var(--item-color);--period-offset:${item.laneOffset}px" title="Double-cliquez pour modifier ${safe(item.label)}"><span class="resize-handle start" data-drag="start"></span><span class="period-label ${labelFitsInside ? "inside" : ""}">${safe(item.label)}</span><span class="resize-handle end" data-drag="end"></span></button>`;
@@ -239,15 +239,27 @@ function recurrenceForm(type) {
 function templateOptions(selected = "") { return [`<option value="">Sans modele</option>`, ...state.store.templates.map((template) => `<option value="${template.id}" ${template.id === selected ? "selected" : ""}>${safe(template.name)}</option>`)].join(""); }
 function templateInfo(text) { return `<span class="template-info" title="${safe(text)}" aria-label="${safe(text)}" tabindex="0">i</span>`; }
 function templateMilestoneHeaders() {
-  return `<div class="template-milestone-header"><span>Libelle ${templateInfo("Nom affiche sur la frise")}</span><span>Iteration ${templateInfo("Laisser vide pour appliquer le jalon a toutes les iterations")}</span><span>Position ${templateInfo("Regle de positionnement du jalon dans l'iteration")}</span><span>Semaine ${templateInfo("Numero de semaine dans l'iteration, utilise avec la position Semaine / jour")}</span><span>Jour ${templateInfo("Jour ISO : lundi 1, mardi 2, jusqu'a dimanche 7 ; ou numero du jour de l'iteration")}</span><span>Heure ${templateInfo("Heure facultative du jalon")}</span><span aria-label="Actions"></span></div>`;
+  return `<div class="template-milestone-header"><span>Libelle ${templateInfo("Nom affiche sur la frise")}</span><span>Iteration ${templateInfo("Laisser vide pour appliquer le jalon a toutes les iterations")}</span><span>Position ${templateInfo("Regle de positionnement du jalon dans l'iteration")}</span><span>Semaine ${templateInfo("Numero de semaine dans l'iteration, utilise avec la position Semaine / jour")}</span><span>Jour ${templateInfo("Jour ISO : lundi 1, mardi 2, jusqu'a dimanche 7 ; ou numero du jour de l'iteration")}</span><span>Heure ${templateInfo("Heure facultative du jalon")}</span><span>Couleur ${templateInfo("Couleur du jalon sur la frise")}</span><span aria-label="Actions"></span></div>`;
 }
 function templateMilestoneRow(milestone = {}) {
   const position = milestone.position || { kind: "week-day", week: 2, dayOfWeek: 3 };
-  return `<div class="template-milestone-row"><input required name="milestone_name" value="${safe(milestone.name || "")}" placeholder="Nom du jalon" aria-label="Nom du jalon"><input name="milestone_iteration" type="number" min="1" placeholder="Toutes" value="${milestone.iteration || ""}" aria-label="Iteration cible"><select name="milestone_position" aria-label="Position relative"><option value="first-day" ${position.kind === "first-day" ? "selected" : ""}>Premier jour</option><option value="last-day" ${position.kind === "last-day" ? "selected" : ""}>Dernier jour</option><option value="day-of-iteration" ${position.kind === "day-of-iteration" ? "selected" : ""}>Jour de l'iteration</option><option value="week-day" ${position.kind === "week-day" ? "selected" : ""}>Semaine / jour</option></select><input name="milestone_week" type="number" min="1" max="52" placeholder="Semaine" value="${position.week || ""}" aria-label="Semaine relative"><input name="milestone_day" type="number" min="1" max="31" placeholder="Jour ISO" value="${position.dayOfWeek || position.day || ""}" aria-label="Jour relatif"><input name="milestone_time" type="time" value="${safe(milestone.time || "")}" aria-label="Heure"><button type="button" class="icon-btn" data-action="remove-template-milestone" title="Supprimer le jalon" aria-label="Supprimer le jalon">&times;</button></div>`;
+  return `<div class="template-milestone-row"><input required name="milestone_name" value="${safe(milestone.name || "")}" placeholder="Nom du jalon" aria-label="Nom du jalon"><input name="milestone_iteration" type="number" min="1" placeholder="Toutes" value="${milestone.iteration || ""}" aria-label="Iteration cible"><select name="milestone_position" aria-label="Position relative"><option value="first-day" ${position.kind === "first-day" ? "selected" : ""}>Premier jour</option><option value="last-day" ${position.kind === "last-day" ? "selected" : ""}>Dernier jour</option><option value="day-of-iteration" ${position.kind === "day-of-iteration" ? "selected" : ""}>Jour de l'iteration</option><option value="week-day" ${position.kind === "week-day" ? "selected" : ""}>Semaine / jour</option></select><input name="milestone_week" type="number" min="1" max="52" placeholder="Semaine" value="${position.week || ""}" aria-label="Semaine relative"><input name="milestone_day" type="number" min="1" max="31" placeholder="Jour ISO" value="${position.dayOfWeek || position.day || ""}" aria-label="Jour relatif"><input name="milestone_time" type="time" value="${safe(milestone.time || "")}" aria-label="Heure"><select name="milestone_color" aria-label="Couleur">${colorOptions(milestone.color || "orange")}</select><button type="button" class="icon-btn" data-action="remove-template-milestone" title="Supprimer le jalon" aria-label="Supprimer le jalon">&times;</button></div>`;
+}
+function templatePeriodPositionOptions(position = {}) {
+  return `<option value="first-day" ${position.kind === "first-day" ? "selected" : ""}>Premier jour</option><option value="last-day" ${position.kind === "last-day" ? "selected" : ""}>Dernier jour</option><option value="day-of-iteration" ${position.kind === "day-of-iteration" ? "selected" : ""}>Jour de l'iteration</option><option value="week-day" ${position.kind === "week-day" ? "selected" : ""}>Semaine / jour</option>`;
+}
+function templatePeriodRow(period = {}) {
+  const startPosition = period.startPosition || { kind: "first-day" };
+  const endPosition = period.endPosition || { kind: "last-day" };
+  return `<div class="template-period-row"><input required name="period_name" value="${safe(period.name || "")}" placeholder="Nom de la periode" aria-label="Nom de la periode"><input name="period_iteration" type="number" min="1" placeholder="Toutes" value="${period.iteration || ""}" aria-label="Iteration cible"><select name="period_start_position" aria-label="Debut relatif">${templatePeriodPositionOptions(startPosition)}</select><input name="period_start_week" type="number" min="1" max="52" placeholder="Semaine" value="${startPosition.week || ""}" aria-label="Semaine de debut"><input name="period_start_day" type="number" min="1" max="31" placeholder="Jour" value="${startPosition.dayOfWeek || startPosition.day || ""}" aria-label="Jour de debut"><select name="period_end_position" aria-label="Fin relative">${templatePeriodPositionOptions(endPosition)}</select><input name="period_end_week" type="number" min="1" max="52" placeholder="Semaine" value="${endPosition.week || ""}" aria-label="Semaine de fin"><input name="period_end_day" type="number" min="1" max="31" placeholder="Jour" value="${endPosition.dayOfWeek || endPosition.day || ""}" aria-label="Jour de fin"><select name="period_color" aria-label="Couleur">${colorOptions(period.color || "blue")}</select><select name="period_render_mode" aria-label="Rendu"><option value="bracket" ${period.renderMode !== "rectangle" ? "selected" : ""}>Accolade</option><option value="rectangle" ${period.renderMode === "rectangle" ? "selected" : ""}>Rectangle</option></select><button type="button" class="icon-btn" data-action="remove-template-period" title="Supprimer la periode" aria-label="Supprimer la periode">&times;</button></div>`;
+}
+function templatePeriodHeaders() {
+  return `<div class="template-period-header"><span>Libelle ${templateInfo("Nom affiche sur la frise")}</span><span>Iteration ${templateInfo("Laisser vide pour toutes les iterations")}</span><span>Debut ${templateInfo("Position relative du debut")}</span><span>Semaine</span><span>Jour</span><span>Fin ${templateInfo("Position relative de la fin")}</span><span>Semaine</span><span>Jour</span><span>Couleur</span><span>Rendu ${templateInfo("Affichage en accolade ou rectangle")}</span><span></span></div>`;
 }
 function templateForm(template = {}) {
   const milestones = template.milestones?.length ? template.milestones.map(templateMilestoneRow).join("") : templateMilestoneRow();
-  return `<form data-form="template" data-template-id="${template.id || ""}"><div class="form-grid"><label class="field wide">Nom<input required name="name" maxlength="120" value="${safe(template.name || "")}" placeholder="Iteration Agile 2 semaines" autofocus></label><label class="field wide">Description<textarea name="description" maxlength="2000">${safe(template.description || "")}</textarea></label><label class="field">Duree d'une iteration (jours)<input required type="number" min="1" name="iterationDurationDays" value="${template.iterationDurationDays || 14}"></label><label class="field">Nombre d'iterations<input required type="number" min="1" max="1000" name="numberOfIterations" value="${template.numberOfIterations || 10}"></label><label class="field">Libelle des iterations<input name="iterationLabel" value="${safe(template.iterationLabel || "Iteration")}"></label><label class="field">Couleur<select name="iterationColor">${colorOptions(template.iterationColor || "blue")}</select></label></div><fieldset class="template-milestones"><legend>Jalons recurrents</legend><div class="template-milestone-table">${templateMilestoneHeaders()}<div data-template-milestones>${milestones}</div></div><button type="button" class="command-btn" data-action="add-template-milestone">+ Ajouter un jalon</button><small>Iteration vide = toutes les iterations. Jour ISO : lundi 1, dimanche 7.</small></fieldset><div class="modal-actions"><button type="button" class="command-btn danger" data-action="delete-template" ${template.id ? "" : "hidden"}>Supprimer</button><div class="right"><button type="button" class="command-btn" data-action="close-modal">Annuler</button><button class="command-btn primary">Enregistrer</button></div></div></form>`;
+  const periods = template.periods?.length ? template.periods.map(templatePeriodRow).join("") : templatePeriodRow();
+  return `<form data-form="template" data-template-id="${template.id || ""}"><div class="form-grid"><label class="field wide">Nom<input required name="name" maxlength="120" value="${safe(template.name || "")}" placeholder="Iteration Agile 2 semaines" autofocus></label><label class="field wide">Description<textarea name="description" maxlength="2000">${safe(template.description || "")}</textarea></label><label class="field">Duree d'une iteration (jours)<input required type="number" min="1" name="iterationDurationDays" value="${template.iterationDurationDays || 14}"></label><label class="field">Nombre d'iterations<input required type="number" min="1" max="1000" name="numberOfIterations" value="${template.numberOfIterations || 10}"></label><label class="field">Libelle des iterations<input name="iterationLabel" value="${safe(template.iterationLabel || "Iteration")}"></label><label class="field">Couleur<select name="iterationColor">${colorOptions(template.iterationColor || "blue")}</select></label></div><fieldset class="template-milestones"><legend>Jalons recurrents</legend><div class="template-milestone-table">${templateMilestoneHeaders()}<div data-template-milestones>${milestones}</div></div><button type="button" class="command-btn" data-action="add-template-milestone">+ Ajouter un jalon</button><small>Iteration vide = toutes les iterations. Jour ISO : lundi 1, dimanche 7.</small></fieldset><fieldset class="template-milestones"><legend>Periodes recurrentes</legend><div class="template-period-table">${templatePeriodHeaders()}<div data-template-periods>${periods}</div></div><button type="button" class="command-btn" data-action="add-template-period">+ Ajouter une periode</button><small>Definissez le debut et la fin de chaque periode relativement a l'iteration.</small></fieldset><div class="modal-actions"><button type="button" class="command-btn danger" data-action="delete-template" ${template.id ? "" : "hidden"}>Supprimer</button><div class="right"><button type="button" class="command-btn" data-action="close-modal">Annuler</button><button class="command-btn primary">Enregistrer</button></div></div></form>`;
 }
 function templateList() { return `<div class="template-list">${state.store.templates.length ? state.store.templates.map((template) => `<article class="template-row"><div><strong>${safe(template.name)}</strong><span>${template.numberOfIterations} iterations - ${template.iterationDurationDays} jours / iteration</span>${template.description ? `<p>${safe(template.description)}</p>` : ""}</div><div class="template-actions"><button class="command-btn" data-action="use-template" data-template="${template.id}">Utiliser</button><button class="icon-btn" data-action="edit-template" data-template="${template.id}" title="Modifier" aria-label="Modifier">&#9998;</button><button class="icon-btn" data-action="duplicate-template" data-template="${template.id}" title="Dupliquer" aria-label="Dupliquer">&#10697;</button></div></article>`).join("") : `<p class="empty-note">Aucun modele. Creez votre premiere cadence.</p>`}</div>`; }
 function openTemplateManager() { openModal("Modeles de cadence", `<div class="modal-actions"><span></span><button class="command-btn primary" data-action="new-template">+ Creer un modele</button></div>${templateList()}`); }
@@ -316,6 +328,13 @@ function showHoverDetails(itemId) {
   details.classList.add("visible");
 }
 function hideHoverDetails() { document.querySelector("#hover-details")?.classList.remove("visible"); }
+function readTemplatePosition(row, prefix) {
+  const kind = row.querySelector(`[name=${prefix}_position]`).value;
+  const day = Number(row.querySelector(`[name=${prefix}_day]`).value);
+  return kind === "week-day"
+    ? { kind, week: Number(row.querySelector(`[name=${prefix}_week]`).value), dayOfWeek: day }
+    : kind === "day-of-iteration" ? { kind, day } : { kind };
+}
 function readTemplateForm(form) {
   const milestones = [...form.querySelectorAll("[data-template-milestones] > .template-milestone-row")].map((row) => {
     const kind = row.querySelector("[name=milestone_position]").value;
@@ -323,9 +342,18 @@ function readTemplateForm(form) {
     const position = kind === "week-day"
       ? { kind, week: Number(row.querySelector("[name=milestone_week]").value), dayOfWeek: day }
       : kind === "day-of-iteration" ? { kind, day } : { kind };
-    return { id: crypto.randomUUID(), name: row.querySelector("[name=milestone_name]").value.trim(), iteration: Number(row.querySelector("[name=milestone_iteration]").value) || null, time: row.querySelector("[name=milestone_time]").value, position };
+    return { id: crypto.randomUUID(), name: row.querySelector("[name=milestone_name]").value.trim(), iteration: Number(row.querySelector("[name=milestone_iteration]").value) || null, time: row.querySelector("[name=milestone_time]").value, color: row.querySelector("[name=milestone_color]").value, position };
   }).filter(({ name }) => name);
-  return { id: form.dataset.templateId || crypto.randomUUID(), name: form.elements.name.value.trim(), description: form.elements.description.value.trim(), iterationDurationDays: Number(form.elements.iterationDurationDays.value), numberOfIterations: Number(form.elements.numberOfIterations.value), iterationLabel: form.elements.iterationLabel.value.trim() || "Iteration", iterationColor: form.elements.iterationColor.value, iterationRenderMode: "rectangle", milestones, is_sandbox: state.mode === "sandbox" };
+  const periods = [...form.querySelectorAll("[data-template-periods] > .template-period-row")].map((row) => ({
+    id: crypto.randomUUID(),
+    name: row.querySelector("[name=period_name]").value.trim(),
+    iteration: Number(row.querySelector("[name=period_iteration]").value) || null,
+    startPosition: readTemplatePosition(row, "period_start"),
+    endPosition: readTemplatePosition(row, "period_end"),
+    color: row.querySelector("[name=period_color]").value,
+    renderMode: row.querySelector("[name=period_render_mode]").value,
+  })).filter(({ name }) => name);
+  return { id: form.dataset.templateId || crypto.randomUUID(), name: form.elements.name.value.trim(), description: form.elements.description.value.trim(), iterationDurationDays: Number(form.elements.iterationDurationDays.value), numberOfIterations: Number(form.elements.numberOfIterations.value), iterationLabel: form.elements.iterationLabel.value.trim() || "Iteration", iterationColor: form.elements.iterationColor.value, iterationRenderMode: "rectangle", milestones, periods, is_sandbox: state.mode === "sandbox" };
 }
 function templateById(id) { return state.store.templates.find((template) => template.id === id); }
 function createTimelineFromTemplate(store, data, template) {
@@ -389,6 +417,8 @@ document.addEventListener("click", (event) => {
   if (action === "use-template") openModal("Creer une timeline depuis un modele", timelineForm(actionElement.dataset.template));
   if (action === "add-template-milestone") actionElement.closest("[data-form=template]").querySelector("[data-template-milestones]").insertAdjacentHTML("beforeend", templateMilestoneRow());
   if (action === "remove-template-milestone") { const rows = actionElement.closest("[data-template-milestones]").querySelectorAll(".template-milestone-row"); if (rows.length > 1) actionElement.closest(".template-milestone-row").remove(); }
+  if (action === "add-template-period") actionElement.closest("[data-form=template]").querySelector("[data-template-periods]").insertAdjacentHTML("beforeend", templatePeriodRow());
+  if (action === "remove-template-period") { const rows = actionElement.closest("[data-template-periods]").querySelectorAll(".template-period-row"); if (rows.length > 1) actionElement.closest(".template-period-row").remove(); }
   if (action === "delete-template") { const templateId = actionElement.closest("[data-form=template]").dataset.templateId; state.store.templates = state.store.templates.filter(({ id }) => id !== templateId); markDirty(); closeModal(); openTemplateManager(); }
   if (action === "close-modal") closeModal();
   if (action === "delete-item") { const itemId = event.target.dataset.item; deleteItem(state.store, itemId); if (state.selectedItemId === itemId) state.selectedItemId = null; if (state.detailsItemId === itemId) state.detailsItemId = null; closeModal(); render(); }
@@ -542,12 +572,14 @@ app.addEventListener("pointermove", (event) => {
     if (drag.handle === "move") drag.element.style.transform = `translateX(${dayDelta * scale.pixelsPerDay}px)`;
     if (drag.handle === "start") {
       const nextStart = Math.min(dayDelta, daysBetween(drag.start, drag.end));
-      drag.element.style.left = `${dateToX(addDays(drag.start, nextStart), scale)}px`;
-      drag.element.style.width = `${Math.max(32, (daysBetween(addDays(drag.start, nextStart), drag.end) + 1) * scale.pixelsPerDay)}px`;
+      const nextStartDate = formatDate(addDays(drag.start, nextStart));
+      drag.element.style.left = `${dateToX(nextStartDate, scale) + periodStartOffset()}px`;
+      drag.element.style.width = `${periodWidth({ start_date: nextStartDate, end_date: drag.end }, scale)}px`;
     }
     if (drag.handle === "end") {
       const nextEnd = Math.max(dayDelta, -daysBetween(drag.start, drag.end));
-      drag.element.style.width = `${Math.max(32, (daysBetween(drag.start, addDays(drag.end, nextEnd)) + 1) * scale.pixelsPerDay)}px`;
+      const nextEndDate = formatDate(addDays(drag.end, nextEnd));
+      drag.element.style.width = `${periodWidth({ start_date: drag.start, end_date: nextEndDate }, scale)}px`;
     }
     drag.element.classList.add("dragging");
   }

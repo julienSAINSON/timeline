@@ -49,6 +49,26 @@ export function generateTimelineFromTemplate(template, startDate, options = {}) 
       template_milestone_id: null,
     });
 
+    (template.periods || []).filter(({ iteration }) => iteration == null || iteration === index + 1).forEach((period) => {
+      const periodStart = resolveRelativeDate(start, durationDays, period.startPosition);
+      const periodEnd = resolveRelativeDate(start, durationDays, period.endPosition);
+      if (periodEnd < periodStart) throw new Error("La fin de la periode doit suivre son debut.");
+      items.push({
+        id: itemId(),
+        type: "period",
+        label: period.name,
+        description: period.description || "",
+        link_alias: "",
+        link_url: "",
+        start_date: formatDate(periodStart),
+        end_date: formatDate(periodEnd),
+        color: period.color || "blue",
+        render_mode: period.renderMode || "bracket",
+        recurrence_id: null,
+        template_period_id: period.id || null,
+      });
+    });
+
     template.milestones.filter(({ iteration }) => iteration == null || iteration === index + 1).forEach((milestone) => {
       const date = resolveRelativeDate(start, durationDays, milestone.position);
       items.push({

@@ -78,12 +78,14 @@ create table if not exists public.tl_templates (
   iteration_color text not null default 'blue',
   iteration_render_mode text not null default 'rectangle' check (iteration_render_mode in ('bracket', 'rectangle')),
   milestones jsonb not null default '[]'::jsonb,
+  periods jsonb not null default '[]'::jsonb,
   is_sandbox boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check ((is_sandbox and user_id is null) or (not is_sandbox and user_id is not null))
 );
 alter table public.tl_templates alter column user_id drop not null;
+alter table public.tl_templates add column if not exists periods jsonb not null default '[]'::jsonb;
 create index if not exists tl_templates_user_id_idx on public.tl_templates(user_id);
 alter table public.tl_timelines add column if not exists template_id uuid;
 alter table public.tl_timelines add column if not exists template_start_date date;

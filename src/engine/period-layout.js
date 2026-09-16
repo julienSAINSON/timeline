@@ -7,8 +7,10 @@ function overlaps(left, right) {
 
 export function periodWidth(item, scale) {
   const width = Math.max(32, (daysBetween(item.start_date, item.end_date) + 1) * scale.pixelsPerDay);
-  return item.recurrence_id ? Math.max(28, width - 8) : width;
+  return Math.max(28, width - 8);
 }
+
+export function periodStartOffset() { return 4; }
 
 function requiredHeight(item, width) {
   if (item.render_mode === "rectangle") return 34;
@@ -22,14 +24,14 @@ export function layoutPeriods(items, scale) {
     .sort((left, right) => dateToX(left.start_date, scale) - dateToX(right.start_date, scale))
     .map((item) => {
       const x = dateToX(item.start_date, scale);
-      const width = periodWidth(item, scale);
+      const width = Math.max(32, (daysBetween(item.start_date, item.end_date) + 1) * scale.pixelsPerDay);
       const interval = { start: x, end: x + width };
       let lane = lanes.findIndex((entries) => entries.every((entry) => !overlaps(interval, entry.interval)));
       if (lane === -1) {
         lane = lanes.length;
         lanes.push([]);
       }
-      const laneHeight = requiredHeight(item, width);
+      const laneHeight = requiredHeight(item, periodWidth(item, scale));
       lanes[lane].push({ interval, laneHeight });
       return { ...item, lane, laneHeight };
     });

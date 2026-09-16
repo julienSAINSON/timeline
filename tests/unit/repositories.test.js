@@ -78,13 +78,14 @@ describe("repositories Supabase", () => {
       iteration_color: "blue",
       iteration_render_mode: "rectangle",
       milestones: [{ name: "Demo", position: { kind: "week-day", week: 2, dayOfWeek: 3 } }],
+      periods: [{ name: "Build", startPosition: { kind: "first-day" }, endPosition: { kind: "day-of-iteration", day: 5 } }],
     }];
     const repository = new SupabaseTimelineRepository({ id: "user-1" });
     const store = await repository.loadStore();
 
-    expect(store.templates[0]).toMatchObject({ id: "template-1", iterationDurationDays: 14, numberOfIterations: 3 });
+    expect(store.templates[0]).toMatchObject({ id: "template-1", iterationDurationDays: 14, numberOfIterations: 3, periods: [{ name: "Build" }] });
     await repository.saveStore({ timelines: [], items: [], recurrences: [], templates: [store.templates[0]] });
-    expect(calls).toContainEqual(expect.objectContaining({ operation: "upsert", table: "tl_templates", rows: [expect.objectContaining({ iteration_duration_days: 14, number_of_iterations: 3 })] }));
+    expect(calls).toContainEqual(expect.objectContaining({ operation: "upsert", table: "tl_templates", rows: [expect.objectContaining({ iteration_duration_days: 14, number_of_iterations: 3, periods: [{ name: "Build", startPosition: { kind: "first-day" }, endPosition: { kind: "day-of-iteration", day: 5 } }] })] }));
   });
 
   it("charge une consultation publique et filtre ses affectations RACI", async () => {

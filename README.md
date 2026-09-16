@@ -69,4 +69,4 @@ Pour un partage en lecture seule dans cette BETA, activez **Partager** puis util
 
 ## Modeles de cadence
 
-Le bouton **Modeles** permet de definir une structure relative (duree d'une iteration, nombre d'iterations et jalons). Lors de la creation d'une frise, choisissez un modele et une date de debut : les periodes et jalons sont alors generes comme des elements independants. Modifier la frise ne modifie pas le modele d'origine.
+Le bouton **Modeles** permet de definir une structure relative (duree d'une iteration, nombre d'iterations, periodes et jalons). Les periodes definissent un debut et une fin relatifs a l'iteration, avec leur couleur et leur rendu. Lors de la creation d'une frise, choisissez un modele et une date de debut : les periodes et jalons sont alors generes comme des elements independants. Modifier la frise ne modifie pas le modele d'origine.
