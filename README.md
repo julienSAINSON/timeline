@@ -65,4 +65,4 @@ Sans session Google, l'utilisateur choisit explicitement le bac a sable. Ses fri
 4. Validez: GitHub Pages servira directement `index.html`.
 5. Ajoutez l'URL Pages finale a la configuration OAuth Google et remplacez `supabaseRedirectTo` dans la configuration publiee par cette URL.
 
-Pour un partage en lecture seule dans cette BETA, activez **Partager** puis utilisez le lien genere avec le parametre `?view=<public_token>`. Le mode n'affiche aucune commande d'edition. Une route propre `/view/:public_token` pourra etre introduite avec un routeur SPA et une regle de reecriture Pages lorsque le partage public passera en phase active.
+Pour un partage en lecture seule dans cette BETA, activez **Partager** puis utilisez le lien genere avec le parametre `?view=<public_token>`, ou copiez le code iframe fourni. Une vue combinee utilise plusieurs jetons dans le meme parametre, separes par des virgules. Le mode n'affiche aucune commande d'edition. Une route propre `/view/:public_token` pourra etre introduite avec un routeur SPA et une regle de reecriture Pages lorsque le partage public passera en phase active.

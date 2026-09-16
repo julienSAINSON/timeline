@@ -15,8 +15,9 @@ function query(table) {
     order: vi.fn(function order(column) { calls.push({ operation: "order", table, column }); return this; }),
     maybeSingle: vi.fn(function maybeSingle() { calls.push({ operation: "maybeSingle", table }); return this; }),
     delete: vi.fn(function remove() { calls.push({ operation: "delete", table }); return this; }),
-    in: vi.fn((column, values) => { calls.push({ operation: "in", table, column, values }); return { error: null }; }),
+    in: vi.fn(function inFilter(column, values) { calls.push({ operation: "in", table, column, values }); return this; }),
     upsert: vi.fn((rows, options) => { calls.push({ operation: "upsert", table, rows, options }); return { error: null }; }),
+    error: null,
     then: (resolve, reject) => Promise.resolve(response()).then(resolve, reject),
   };
 }
@@ -66,7 +67,7 @@ describe("repositories Supabase", () => {
   });
 
   it("charge une consultation publique et filtre ses affectations RACI", async () => {
-    responses.tl_timelines.data = { id: "public-1", is_public: true, public_token: "token" };
+    responses.tl_timelines.data = [{ id: "public-1", is_public: true, public_token: "token" }];
     responses.tl_items.data = [{ id: "public-item", timeline_id: "public-1", type: "milestone", label: "Public" }];
     responses.tl_raci_assignments.data = [
       { item_id: "public-item", role: "accountable", person: "Claire" },
@@ -75,7 +76,26 @@ describe("repositories Supabase", () => {
     const store = await new PublicTimelineRepository().loadStore("token");
     expect(store.timelines).toHaveLength(1);
     expect(store.items[0].raci).toBe('{"accountable":"Claire"}');
+    expect(calls).toContainEqual({ operation: "in", table: "tl_timelines", column: "public_token", values: ["token"] });
     expect(calls).toContainEqual({ operation: "eq", table: "tl_timelines", column: "is_public", value: true });
+  });
+
+  it("charge plusieurs frises pour une vue publique combinee", async () => {
+    responses.tl_timelines.data = [
+      { id: "public-1", is_public: true, public_token: "token-1" },
+      { id: "public-2", is_public: true, public_token: "token-2" },
+    ];
+    responses.tl_items.data = [
+      { id: "item-1", timeline_id: "public-1", type: "milestone", label: "Premier" },
+      { id: "item-2", timeline_id: "public-2", type: "milestone", label: "Second" },
+    ];
+
+    const store = await new PublicTimelineRepository().loadStore("token-1,token-2");
+
+    expect(store.timelines).toHaveLength(2);
+    expect(store.items).toHaveLength(2);
+    expect(calls).toContainEqual({ operation: "in", table: "tl_timelines", column: "public_token", values: ["token-1", "token-2"] });
+    expect(calls).toContainEqual({ operation: "in", table: "tl_items", column: "timeline_id", values: ["public-1", "public-2"] });
   });
 
   it("refuse une consultation dont le token ne correspond a aucune frise publique", async () => {

@@ -92,17 +92,19 @@ export class SupabaseTimelineRepository {
 export class PublicTimelineRepository {
   constructor() { this.client = getSupabaseClient(); }
   async loadStore(publicToken) {
-    const { data: timeline, error: timelineError } = await this.client.from("tl_timelines").select("id,name,start_date,end_date,theme,is_sandbox,is_public,public_token").eq("public_token", publicToken).eq("is_public", true).maybeSingle();
+    const publicTokens = publicToken.split(",").map((token) => token.trim()).filter(Boolean);
+    const { data: timelines, error: timelineError } = await this.client.from("tl_timelines").select("id,name,start_date,end_date,theme,is_sandbox,is_public,public_token").in("public_token", publicTokens).eq("is_public", true).order("created_at");
     if (timelineError) throw new Error(timelineError.message);
-    if (!timeline) throw new Error("Cette frise n'est pas disponible en consultation.");
+    if (!timelines?.length) throw new Error("Cette frise n'est pas disponible en consultation.");
+    const timelineIds = timelines.map(({ id }) => id);
     const [recurrences, items, assignments] = await Promise.all([
-      this.client.from("tl_recurrences").select("*").eq("timeline_id", timeline.id).order("created_at"),
-      this.client.from("tl_items").select("*").eq("timeline_id", timeline.id).order("start_date"),
+      this.client.from("tl_recurrences").select("*").in("timeline_id", timelineIds).order("created_at"),
+      this.client.from("tl_items").select("*").in("timeline_id", timelineIds).order("start_date"),
       this.client.from("tl_raci_assignments").select("item_id,role,person")
     ]);
     [recurrences, items, assignments].forEach(({ error }) => { if (error) throw new Error(error.message); });
     const itemIds = new Set((items.data || []).map(({ id }) => id));
-    return { timelines: [timeline], recurrences: recurrences.data || [], items: enrichRaci(items.data || [], (assignments.data || []).filter(({ item_id }) => itemIds.has(item_id))) };
+    return { timelines, recurrences: recurrences.data || [], items: enrichRaci(items.data || [], (assignments.data || []).filter(({ item_id }) => itemIds.has(item_id))) };
   }
 }
 

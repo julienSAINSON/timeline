@@ -63,6 +63,7 @@ async function startPublicView() {
   state.store = await repository.loadStore(publicToken);
   state.activeTimelineId = state.store.timelines[0].id;
   state.selectedTimelineIds = [state.activeTimelineId];
+  state.viewTimelineIds = state.store.timelines.map(({ id }) => id);
   fitTimelineToViewport();
   state.isDirty = false;
   renderFittedTimeline();
@@ -349,8 +350,15 @@ document.addEventListener("click", (event) => {
   if (action === "new-timeline") openModal("Creer une timeline", timelineForm());
   if (action === "close-modal") closeModal();
   if (action === "delete-item") { const itemId = event.target.dataset.item; deleteItem(state.store, itemId); if (state.selectedItemId === itemId) state.selectedItemId = null; if (state.detailsItemId === itemId) state.detailsItemId = null; closeModal(); render(); }
-  if (action === "share" && !isCombinedView()) { const timeline = activeTimeline(); timeline.is_public = true; markDirty(); openModal("Lien de consultation", `<div class="share-link"><input readonly value="${location.origin}${location.pathname}?view=${timeline.public_token}"><button class="icon-btn copy-link-button" data-action="copy-share-link" title="Copier le lien" aria-label="Copier le lien"><span class="copy-link-icon" aria-hidden="true"></span></button><button class="command-btn" data-action="close-modal">Fermer</button></div>`); }
-    if (action === "share" && !isCombinedView()) { const timeline = activeTimeline(); const publicUrl = `${location.origin}${location.pathname}?view=${timeline.public_token}`; const embedCode = `<iframe src="${publicUrl}" width="100%" height="100%" title="${safe(timeline.name)}" loading="lazy" style="border:0;"></iframe>`; timeline.is_public = true; markDirty(); openModal("Partager la frise", `<label class="field share-field">Lien de consultation<div class="share-link"><input readonly value="${publicUrl}"><button class="icon-btn copy-link-button" data-action="copy-share-link" title="Copier le lien" aria-label="Copier le lien"><span class="copy-link-icon" aria-hidden="true"></span></button></div></label><label class="field share-field">Code d'integration<div class="share-link"><textarea readonly rows="4">${safe(embedCode)}</textarea><button class="icon-btn copy-link-button" data-action="copy-share-link" title="Copier le code HTML" aria-label="Copier le code HTML"><span class="copy-link-icon" aria-hidden="true"></span></button></div></label><div class="modal-actions"><span></span><button class="command-btn" data-action="close-modal">Fermer</button></div>`); }
+  if (action === "share") {
+    const timelines = selectedTimelines();
+    const publicTokens = timelines.map((timeline) => { timeline.is_public = true; return timeline.public_token; });
+    const publicUrl = `${location.origin}${location.pathname}?view=${publicTokens.join(",")}`;
+    const title = isCombinedView() ? `Vue de ${timelines.length} frises` : timelines[0].name;
+    const embedCode = `<iframe src="${publicUrl}" width="100%" height="100%" title="${safe(title)}" loading="lazy" style="border:0;"></iframe>`;
+    markDirty();
+    openModal("Partager la vue", `<label class="field share-field">Lien de consultation<div class="share-link"><input readonly value="${publicUrl}"><button class="icon-btn copy-link-button" data-action="copy-share-link" title="Copier le lien" aria-label="Copier le lien"><span class="copy-link-icon" aria-hidden="true"></span></button></div></label><label class="field share-field">Code d'integration<div class="share-link"><textarea readonly rows="4">${safe(embedCode)}</textarea><button class="icon-btn copy-link-button" data-action="copy-share-link" title="Copier le code HTML" aria-label="Copier le code HTML"><span class="copy-link-icon" aria-hidden="true"></span></button></div></label><div class="modal-actions"><span></span><button class="command-btn" data-action="close-modal">Fermer</button></div>`);
+  }
   if (action === "copy-share-link") copyShareLink(event.target.closest("button"));
   const timelineId = event.target.closest("[data-timeline]")?.dataset.timeline;
   if (timelineId) { state.activeTimelineId = timelineId; state.selectedTimelineIds = [timelineId]; state.viewTimelineIds = null; state.selectedItemId = null; state.detailsItemId = null; render(); }
