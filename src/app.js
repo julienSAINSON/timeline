@@ -1,7 +1,7 @@
 import { COLORS } from "./data.js";
 import { addDays, daysBetween, formatDate, formatHumanDate, parseDate } from "./engine/date-utils.js";
 import { layoutMilestones, positionMilestoneLanes } from "./engine/milestone-layout.js";
-import { layoutPeriods } from "./engine/period-layout.js";
+import { layoutPeriods, periodWidth } from "./engine/period-layout.js";
 import { generateOccurrences } from "./engine/recurrence.js";
 import { createScale, dateToX, formatTick, generateCalendarContext, generateTicks, xToDate } from "./engine/timeline-scale.js";
 import { LocalTimelineRepository, PublicTimelineRepository, SupabaseTimelineRepository } from "./repositories.js";
@@ -209,7 +209,7 @@ function render() {
 
 function renderPeriod(item, scale) {
   const x = dateToX(item.start_date, scale);
-  const width = Math.max(32, (daysBetween(item.start_date, item.end_date) + 1) * scale.pixelsPerDay);
+  const width = periodWidth(item, scale);
   const labelFitsInside = width >= item.label.length * 7.5 + 28;
   return `<button class="period ${item.render_mode === "rectangle" ? "rectangle" : ""} ${item.id === state.selectedItemId ? "selected" : ""}" data-item="${item.id}" style="left:${x}px;width:${width}px;--item-color:${colorValue(item.color)};color:var(--item-color);--period-offset:${item.laneOffset}px" title="Double-cliquez pour modifier ${safe(item.label)}"><span class="resize-handle start" data-drag="start"></span><span class="period-label ${labelFitsInside ? "inside" : ""}">${safe(item.label)}</span><span class="resize-handle end" data-drag="end"></span></button>`;
 }

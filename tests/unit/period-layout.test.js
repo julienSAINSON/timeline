@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { layoutPeriods } from "../../src/engine/period-layout.js";
+import { layoutPeriods, periodWidth } from "../../src/engine/period-layout.js";
 import { createScale } from "../../src/engine/timeline-scale.js";
 
 const scale = createScale({ start_date: "2026-01-01", end_date: "2026-01-31" }, 20);
@@ -24,6 +24,13 @@ describe("layoutPeriods", () => {
       period("two", "2026-01-06", "2026-01-10"),
     ], scale);
     expect(positioned.map(({ lane }) => lane)).toEqual([0, 0]);
+  });
+
+  it("retire un espace visuel aux periodes d'une serie", () => {
+    const seriesPeriod = period("series", "2026-01-01", "2026-01-05");
+    seriesPeriod.recurrence_id = "recurrence-1";
+
+    expect(periodWidth(seriesPeriod, scale)).toBe(periodWidth({ ...seriesPeriod, recurrence_id: null }, scale) - 8);
   });
 
   it("augmente la hauteur d'une periode a libelle long et conserve le mode rectangle", () => {
