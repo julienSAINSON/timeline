@@ -7,10 +7,11 @@ import { generateTimelineFromTemplate } from "./engine/template-generator.js";
 import { createScale, dateToX, formatTick, generateCalendarContext, generateTicks, xToDate } from "./engine/timeline-scale.js";
 import { LocalTimelineRepository, PublicTimelineRepository, SupabaseTimelineRepository } from "./repositories.js";
 import { getCurrentUser, initAuth, loginWithGoogle, logout } from "../supabase/auth/auth.js";
+import { getTimelineShareDetails, removeTimelineShare, searchTimelineUsers, shareTimeline, updateTimelinePermission } from "./timeline-sharing.js";
 
 const app = document.querySelector("#app");
 const modalRoot = document.querySelector("#modal-root");
-const state = { store: { timelines: [], items: [], recurrences: [], templates: [] }, activeTimelineId: null, selectedTimelineIds: [], viewTimelineIds: null, timelineSearch: "", zoom: 6, contextDate: null, readOnly: false, selectedItemId: null, detailsItemId: null, skipNextItemClick: false, mode: null, user: null, isDirty: false };
+const state = { store: { timelines: [], items: [], recurrences: [], templates: [], shares: [] }, activeTimelineId: null, selectedTimelineIds: [], viewTimelineIds: null, timelineSearch: "", zoom: 6, contextDate: null, readOnly: false, selectedItemId: null, detailsItemId: null, skipNextItemClick: false, mode: null, user: null, isDirty: false };
 const RECENT_COLORS_KEY = "timeline-recent-colors";
 const ACCESS_MODE_KEY = "timeline-access-mode";
 const THEMES = {
@@ -33,6 +34,9 @@ function createTimeline(store, data) { const timeline = { id: crypto.randomUUID(
 function saveItem(store, item) { const index = store.items.findIndex(({ id }) => id === item.id); if (index === -1) store.items.push(item); else store.items[index] = item; markDirty(); }
 function deleteItem(store, itemId) { store.items = store.items.filter(({ id }) => id !== itemId); markDirty(); }
 function saveStore(store) { return repository?.saveStore(store); }
+function activeTimelineRole() { return state.store.timelines.find(({ id }) => id === state.activeTimelineId)?.role || (state.mode === "sandbox" ? "owner" : null); }
+function canEditActiveTimeline() { return !state.readOnly && ["owner", "editor"].includes(activeTimelineRole()); }
+function canShareActiveTimeline() { return state.mode === "authenticated" && !state.readOnly && activeTimelineRole() === "owner"; }
 
 function hasSupabaseConfig() { return Boolean(window.TIMELINE_CONFIG?.supabaseUrl && window.TIMELINE_CONFIG?.supabaseAnonKey && !window.TIMELINE_CONFIG.supabaseUrl.includes("your-project")); }
 async function startSandbox() {
@@ -83,6 +87,10 @@ function isCombinedView() { return (state.viewTimelineIds || []).length > 1; }
 function selectedTimelines() {
   const selectedIds = state.viewTimelineIds || [state.activeTimelineId];
   return state.store.timelines.filter(({ id }) => selectedIds.includes(id));
+}
+function timelineSidebarGroup(label, timelines) {
+  if (!timelines.length) return "";
+  return `<div class="sidebar-section-label">${label}</div>${timelines.map((entry) => `<label class="timeline-choice ${entry.id === state.activeTimelineId && !isCombinedView() ? "active" : ""}" data-timeline-name="${safe(entry.name.toLocaleLowerCase())}"><input type="checkbox" data-view-timeline="${entry.id}" ${state.selectedTimelineIds.includes(entry.id) ? "checked" : ""}><span>${safe(entry.name)}${entry.role !== "owner" ? `<small class="timeline-role">${entry.owner_profile?.display_name ? `Proprietaire : ${safe(entry.owner_profile.display_name)} · ` : ""}${entry.role === "editor" ? "Modification" : "Lecture seule"}</small>` : ""}</span><button type="button" class="timeline-open" data-timeline="${entry.id}" title="Ouvrir ${safe(entry.name)}" aria-label="Ouvrir ${safe(entry.name)}">›</button></label>`).join("")}`;
 }
 function activeTimeline() {
   if (!isCombinedView()) return state.store.timelines.find(({ id }) => id === state.activeTimelineId);
@@ -191,9 +199,14 @@ function render() {
   const ticks = generateTicks(scale);
   const calendarMode = ticks[0]?.mode || "quarter";
   const canvasHeight = fullyZoomedOutLayout.contentBottom - fullyZoomedOutLayout.contentTop + 32;
+  const timelineRole = activeTimelineRole();
+  const roleBadge = timelineRole === "viewer" ? `<span class="permission-badge viewer">Lecture seule</span>` : timelineRole === "editor" ? `<span class="permission-badge editor">Modification</span>` : "";
+  const canEdit = canEditActiveTimeline();
+  const canShare = canShareActiveTimeline() && !combinedView;
+  const publicShareButton = canShare ? `<button class="icon-btn" data-action="share" title="Partager publiquement" aria-label="Partager publiquement">&#10548;</button>` : "";
   app.innerHTML = `<div class="shell theme-${currentTheme()} ${state.readOnly ? "public-view" : ""}">
-    ${state.readOnly ? "" : `<aside class="sidebar"><div>${state.mode === "sandbox" ? `<button class="brand" data-action="return-access" title="Revenir a l'accueil">time<span>line</span></button>` : `<div class="brand">time<span>line</span></div>`}<button class="new-timeline" data-action="new-timeline">+ Nouvelle frise</button><button class="command-btn templates-button" data-action="manage-templates">Modeles</button><nav><div class="sidebar-heading"><div class="sidebar-label">Mes frises</div><input class="timeline-search" type="search" data-timeline-search value="${safe(state.timelineSearch)}" placeholder="Rechercher" aria-label="Rechercher une frise"></div><div class="timeline-list">${state.store.timelines.map((entry) => `<label class="timeline-choice ${entry.id === state.activeTimelineId && !combinedView ? "active" : ""}" data-timeline-name="${safe(entry.name.toLocaleLowerCase())}"><input type="checkbox" data-view-timeline="${entry.id}" ${state.selectedTimelineIds.includes(entry.id) ? "checked" : ""}><span>${safe(entry.name)}</span><button type="button" class="timeline-open" data-timeline="${entry.id}" title="Ouvrir ${safe(entry.name)}" aria-label="Ouvrir ${safe(entry.name)}">›</button></label>`).join("")}</div><button class="command-btn view-timelines" data-action="view-timelines" ${state.selectedTimelineIds.length ? "" : "disabled"}>Vue</button></nav></div></aside>`}
-    <section class="workspace">${state.readOnly ? "" : `${state.mode === "sandbox" ? `<aside class="sandbox-banner"><span>&#9883; Mode bac a sable</span><span>Cette frise est enregistree uniquement dans ce navigateur. Elle ne sera pas sauvegardee dans votre compte.</span><button data-action="return-access">Se connecter pour sauvegarder dans votre compte</button></aside>` : ""}<header class="topbar"><div><div class="eyebrow">Editeur</div><div class="timeline-title"><h1>${safe(timeline.name)}</h1><button class="icon-btn edit-title" data-action="edit-timeline-title" title="Modifier le titre" aria-label="Modifier le titre">&#9998;</button><button class="icon-btn delete-timeline" data-action="delete-timeline" title="Supprimer la frise" aria-label="Supprimer la frise">&#128465;</button><button class="icon-btn save-timeline" data-action="save-timeline" title="Sauvegarder" aria-label="Sauvegarder" ${state.isDirty ? "" : "disabled"}>&#128190;</button><button class="icon-btn" data-action="share" title="Partager" aria-label="Partager">&#10548;</button></div><div class="range">${formatHumanDate(timeline.start_date)} - ${formatHumanDate(timeline.end_date)}</div></div><div class="controls"><label class="theme-picker" title="Apparence de la frise"><span>Theme</span><select data-theme-select aria-label="Theme visuel">${themeOptions()}</select></label><button class="icon-btn" data-action="zoom-out" title="Dezoomer">-</button><div class="zoom-readout">${Math.round(scale.pixelsPerDay)}px/j</div><button class="icon-btn" data-action="zoom-in" title="Zoomer">+</button><button class="command-btn" data-action="today">Aujourd'hui</button>${state.mode === "authenticated" ? `<span class="user-email" title="Compte connecte">${safe(state.user?.email || "")}</span><button class="command-btn" data-action="account">Compte</button><button class="command-btn" data-action="logout">Deconnexion</button>` : ""}</div></header>`}
+    ${state.readOnly ? "" : `<aside class="sidebar"><div>${state.mode === "sandbox" ? `<button class="brand" data-action="return-access" title="Revenir a l'accueil">time<span>line</span></button>` : `<div class="brand">time<span>line</span></div>`}<button class="new-timeline" data-action="new-timeline">+ Nouvelle frise</button><button class="command-btn templates-button" data-action="manage-templates">Modeles</button><nav><div class="sidebar-heading"><div class="sidebar-label">Mes frises</div><input class="timeline-search" type="search" data-timeline-search value="${safe(state.timelineSearch)}" placeholder="Rechercher" aria-label="Rechercher une frise"></div><div class="timeline-list">${timelineSidebarGroup("Mes frises", state.store.timelines.filter(({ role }) => role === "owner" || !role))}${timelineSidebarGroup("Partagees avec moi", state.store.timelines.filter(({ role }) => role === "viewer" || role === "editor"))}</div><button class="command-btn view-timelines" data-action="view-timelines" ${state.selectedTimelineIds.length ? "" : "disabled"}>Vue</button></nav></div></aside>`}
+    <section class="workspace">${state.readOnly ? "" : `${state.mode === "sandbox" ? `<aside class="sandbox-banner"><span>&#9883; Mode bac a sable</span><span>Cette frise est enregistree uniquement dans ce navigateur. Elle ne sera pas sauvegardee dans votre compte.</span><button data-action="return-access">Se connecter pour sauvegarder dans votre compte</button></aside>` : ""}<header class="topbar"><div><div class="eyebrow">Editeur ${roleBadge}</div><div class="timeline-title"><h1>${safe(timeline.name)}</h1>${canEdit ? `<button class="icon-btn edit-title" data-action="edit-timeline-title" title="Modifier le titre" aria-label="Modifier le titre">&#9998;</button>` : ""}${timelineRole === "owner" ? `<button class="icon-btn delete-timeline" data-action="delete-timeline" title="Supprimer la frise" aria-label="Supprimer la frise">&#128465;</button>` : ""}${canEdit ? `<button class="icon-btn save-timeline" data-action="save-timeline" title="Sauvegarder" aria-label="Sauvegarder" ${state.isDirty ? "" : "disabled"}>&#128190;</button>` : ""}${canShare ? `<button class="icon-btn" data-action="manage-sharing" title="Partager avec des utilisateurs" aria-label="Partager avec des utilisateurs">&#128101;</button>` : ""}${publicShareButton}</div><div class="range">${formatHumanDate(timeline.start_date)} - ${formatHumanDate(timeline.end_date)}</div></div><div class="controls"><label class="theme-picker" title="Apparence de la frise"><span>Theme</span><select data-theme-select aria-label="Theme visuel">${themeOptions()}</select></label><button class="icon-btn" data-action="zoom-out" title="Dezoomer">-</button><div class="zoom-readout">${Math.round(scale.pixelsPerDay)}px/j</div><button class="icon-btn" data-action="zoom-in" title="Zoomer">+</button><button class="command-btn" data-action="today">Aujourd'hui</button>${state.mode === "authenticated" ? `<span class="user-email" title="Compte connecte">${safe(state.user?.email || "")}</span><button class="command-btn" data-action="account">Compte</button><button class="command-btn" data-action="logout">Deconnexion</button>` : ""}</div></header>`}
     <div class="timeline-frame-shell"><aside class="hover-details" id="hover-details" aria-live="polite"></aside><div class="timeline-frame" id="timeline-frame"><div class="timeline-canvas calendar-${calendarMode}" id="timeline-canvas" style="width:${scale.width}px;height:${canvasHeight}px;--axis-top:${axisTop}px;--calendar-top:${calendarTop}px;--period-top:${periodTop}px;--annotation-top:${annotationTop}px">
       ${ticks.map((tick) => `<div class="tick" style="left:${tick.x}px"><span class="tick-label ${tick.isWeekend ? "weekend" : ""}">${formatTick(tick)}</span></div>`).join("")}
       <div class="calendar-months">${calendarContext.months.map((month, index) => `<span class="calendar-context month" style="left:${month.x}px;width:${(calendarContext.months[index + 1]?.x || scale.width) - month.x}px">${month.label}</span>`).join("")}</div>
@@ -203,7 +216,7 @@ function render() {
       ${milestones.map((item) => `<button class="milestone ${item.side} ${item.id === state.selectedItemId ? "selected" : ""}" style="left:${item.x}px;--card-top:${item.cardTop}px;--milestone-depth:${100 - item.level};color:${colorValue(item.color)};" title="Double-cliquez pour modifier ${safe(item.label)}"><span class="milestone-card" data-item="${item.id}" style="background:${colorValue(item.color)};width:${item.width}px">${safe(item.label)}</span><span class="milestone-stem"></span></button>`).join("")}
       ${periods.map((item) => renderPeriod(item, scale)).join("")}
       ${timelineItems.filter(({ type }) => type === "annotation").map((item) => renderAnnotation(item, scale)).join("")}
-    </div></div></div>${state.readOnly ? "" : `<p class="hint">Clic droit sur la frise pour ajouter un element. Faites glisser une periode ou ses extremites pour modifier ses dates.</p><section class="element-list" aria-label="Elements de la frise"><div class="element-list-heading"><h2>Elements</h2><span>${timelineItems.length} element${timelineItems.length > 1 ? "s" : ""}</span></div>${chronologicalItems().map((item) => `<article class="element-row" data-item="${item.id}"><span class="element-color" style="--item-color:${colorValue(item.color)}"></span><div><strong>${safe(item.label)}</strong><span class="element-type">${item.type === "milestone" ? "Jalon" : item.type === "period" ? "Periode" : "Annotation"}</span></div><time>${itemDateLabel(item)}</time><div class="element-notes"><p>${safe(item.description || "Aucune description")}</p>${itemLink(item)}${raciEntries(item).length ? `<dl class="raci-summary">${raciEntries(item).map(([role, people]) => `<div><dt>${role}</dt><dd>${safe(people)}</dd></div>`).join("")}</dl>` : ""}</div></article>`).join("")}</section>`}</section></div>`;
+    </div></div></div>${canEdit ? `<p class="hint">Clic droit sur la frise pour ajouter un element. Faites glisser une periode ou ses extremites pour modifier ses dates.</p><section class="element-list" aria-label="Elements de la frise"><div class="element-list-heading"><h2>Elements</h2><span>${timelineItems.length} element${timelineItems.length > 1 ? "s" : ""}</span></div>${chronologicalItems().map((item) => `<article class="element-row" data-item="${item.id}"><span class="element-color" style="--item-color:${colorValue(item.color)}"></span><div><strong>${safe(item.label)}</strong><span class="element-type">${item.type === "milestone" ? "Jalon" : item.type === "period" ? "Periode" : "Annotation"}</span></div><time>${itemDateLabel(item)}</time><div class="element-notes"><p>${safe(item.description || "Aucune description")}</p>${itemLink(item)}${raciEntries(item).length ? `<dl class="raci-summary">${raciEntries(item).map(([role, people]) => `<div><dt>${role}</dt><dd>${safe(people)}</dd></div>`).join("")}</dl>` : ""}</div></article>`).join("")}</section>` : ""}</section></div>`;
   if (combinedView) app.querySelectorAll(".edit-title, .delete-timeline, [data-action=\"share\"]").forEach((element) => { element.hidden = true; });
   if (state.detailsItemId) showHoverDetails(state.detailsItemId);
 }
@@ -294,6 +307,15 @@ async function copyShareLink(button) {
   catch { input.select(); document.execCommand("copy"); input.setSelectionRange(0, 0); }
   button.title = "Lien copie";
   button.setAttribute("aria-label", "Lien copie");
+}
+function sharingList(details) {
+  return details.length ? details.map(({ user_id, permission, profile }) => `<div class="sharing-row"><div><strong>${safe(profile?.display_name || profile?.email || user_id)}</strong><small>${safe(profile?.email || "")}</small></div><select data-share-permission="${user_id}" aria-label="Droit de partage"><option value="viewer" ${permission === "viewer" ? "selected" : ""}>Lecture</option><option value="editor" ${permission === "editor" ? "selected" : ""}>Modification</option></select><button class="command-btn danger" data-action="remove-share" data-user-id="${user_id}">Retirer</button></div>`).join("") : `<p class="empty-note">Aucun utilisateur partage.</p>`;
+}
+async function openSharingModal() {
+  const timeline = activeTimeline();
+  if (!timeline || !canShareActiveTimeline()) return;
+  const details = await getTimelineShareDetails(timeline.id);
+  openModal("Partager cette frise", `<div class="sharing-panel"><label class="field">Rechercher un utilisateur<input type="search" data-share-search placeholder="Nom ou email" autocomplete="off"></label><div class="sharing-results" data-sharing-results></div><h3>Acces a cette frise</h3><div class="sharing-list" data-sharing-list>${sharingList(details)}</div></div><div class="modal-actions"><span></span><button class="command-btn" data-action="close-modal">Fermer</button></div>`);
 }
 
 function showContextMenu(event) {
@@ -386,7 +408,7 @@ document.addEventListener("click", (event) => {
   if (action === "start-sandbox") { localStorage.setItem(ACCESS_MODE_KEY, "sandbox"); startSandbox(); return; }
   if (action === "return-access") { localStorage.removeItem(ACCESS_MODE_KEY); repository = null; state.mode = null; renderAccessScreen(); return; }
   if (action === "account") { const identity = state.user.user_metadata?.full_name || state.user.email || "Utilisateur connecte"; openModal("Compte", `<p>${safe(identity)}</p><div class="modal-actions"><span></span><button class="command-btn danger" data-action="logout">Se deconnecter</button></div>`); return; }
-  if (action === "logout") { logout().then(() => { localStorage.removeItem(ACCESS_MODE_KEY); repository = null; state.mode = null; state.user = null; state.store = { timelines: [], items: [], recurrences: [], templates: [] }; state.activeTimelineId = null; closeModal(); renderAccessScreen(); }).catch((error) => openModal("Deconnexion", `<p>${safe(error.message)}</p>`)); return; }
+  if (action === "logout") { logout().then(() => { localStorage.removeItem(ACCESS_MODE_KEY); repository = null; state.mode = null; state.user = null; state.store = { timelines: [], items: [], recurrences: [], templates: [], shares: [] }; state.activeTimelineId = null; closeModal(); renderAccessScreen(); }).catch((error) => openModal("Deconnexion", `<p>${safe(error.message)}</p>`)); return; }
   if (action === "zoom-in") { state.zoom = Math.min(34, state.zoom + 2); renderPreservingDetails(); }
   if (action === "zoom-out") { state.zoom = Math.max(minimumZoom(), state.zoom - 2); renderPreservingDetails(); }
   if (action === "today") scrollToToday();
@@ -410,6 +432,15 @@ document.addEventListener("click", (event) => {
     }).finally(() => window.setTimeout(() => { if (iconOnly) { actionElement.title = "Sauvegarder"; actionElement.setAttribute("aria-label", "Sauvegarder"); } else actionElement.textContent = "Sauvegarder"; actionElement.disabled = !state.isDirty; }, 1800));
   }
   if (action === "new-timeline") openModal("Creer une timeline", timelineForm());
+  if (action === "manage-sharing") { openSharingModal().catch((error) => openModal("Partage", `<p>${safe(error.message)}</p><div class="modal-actions"><span></span><button class="command-btn primary" data-action="close-modal">Fermer</button></div>`)); return; }
+  if (action === "share-user") {
+    shareTimeline(activeTimeline().id, actionElement.dataset.userId, actionElement.dataset.permission).then(() => openSharingModal()).catch((error) => openModal("Partage", `<p>${safe(error.message)}</p><div class="modal-actions"><span></span><button class="command-btn primary" data-action="close-modal">Fermer</button></div>`));
+    return;
+  }
+  if (action === "remove-share") {
+    removeTimelineShare(activeTimeline().id, actionElement.dataset.userId).then(() => openSharingModal()).catch((error) => openModal("Partage", `<p>${safe(error.message)}</p>`));
+    return;
+  }
   if (action === "manage-templates") openTemplateManager();
   if (action === "new-template") openModal("Nouveau modele", templateForm());
   if (action === "edit-template") { const template = templateById(actionElement.dataset.template); if (template) openModal("Modifier le modele", templateForm(template)); }
@@ -422,6 +453,7 @@ document.addEventListener("click", (event) => {
   if (action === "delete-template") { const templateId = actionElement.closest("[data-form=template]").dataset.templateId; state.store.templates = state.store.templates.filter(({ id }) => id !== templateId); markDirty(); closeModal(); openTemplateManager(); }
   if (action === "close-modal") closeModal();
   if (action === "delete-item") { const itemId = event.target.dataset.item; deleteItem(state.store, itemId); if (state.selectedItemId === itemId) state.selectedItemId = null; if (state.detailsItemId === itemId) state.detailsItemId = null; closeModal(); render(); }
+  if (action === "share" && !canShareActiveTimeline()) return;
   if (action === "share") {
     const timelines = selectedTimelines();
     const publicTokens = timelines.map((timeline) => { timeline.is_public = true; return timeline.public_token; });
@@ -436,7 +468,7 @@ document.addEventListener("click", (event) => {
   if (timelineId) { state.activeTimelineId = timelineId; state.selectedTimelineIds = [timelineId]; state.viewTimelineIds = null; state.selectedItemId = null; state.detailsItemId = null; render(); }
   const itemElement = event.target.closest("[data-item]");
   const itemId = itemElement?.dataset.item;
-  if (itemId && !state.readOnly) {
+  if (itemId && canEditActiveTimeline()) {
     if (itemElement.closest(".element-list")) {
       selectTimelineItem(itemId);
       centerTimelineItem(itemId);
@@ -464,6 +496,7 @@ document.addEventListener("submit", (event) => {
   event.preventDefault(); const data = Object.fromEntries(new FormData(event.target));
   if (data.form === "") return;
   if (data.color) rememberColor(data.color);
+  if (["timeline-title", "item", "recurrence"].includes(event.target.dataset.form) && !canEditActiveTimeline()) return;
   if (event.target.dataset.form === "template") { const template = readTemplateForm(event.target); const index = state.store.templates.findIndex(({ id }) => id === template.id); if (index === -1) state.store.templates.push(template); else state.store.templates[index] = template; markDirty(); closeModal(); openTemplateManager(); return; }
   if (event.target.dataset.form === "timeline") { const template = templateById(data.template_id); const timeline = template ? createTimelineFromTemplate(state.store, data, template) : createTimeline(state.store, { name: data.name, start_date: data.start_date, end_date: data.end_date }); state.activeTimelineId = timeline.id; state.selectedTimelineIds = [timeline.id]; state.viewTimelineIds = null; closeModal(); render(); return; }
   if (event.target.dataset.form === "timeline-title") { activeTimeline().name = data.name.trim(); markDirty(); closeModal(); render(); return; }
@@ -471,11 +504,23 @@ document.addEventListener("submit", (event) => {
   if (event.target.dataset.form === "recurrence") { const recurrence = { ...data, id: crypto.randomUUID(), timeline_id: state.activeTimelineId, occurrences: Number(data.occurrences), duration: Number(data.duration || 1), interval: Number(data.interval) }; state.store.recurrences.push(recurrence); generateOccurrences(recurrence).forEach((item) => saveItem(state.store, item)); markDirty(); closeModal(); render(); }
 });
 modalRoot.addEventListener("change", (event) => {
+  if (event.target.matches("[data-share-permission]") && canShareActiveTimeline()) {
+    updateTimelinePermission(activeTimeline().id, event.target.dataset.sharePermission, event.target.value).catch((error) => openModal("Partage", `<p>${safe(error.message)}</p>`));
+    return;
+  }
   if (!event.target.matches("[data-color-picker]")) return;
   const field = event.target.closest(".field");
   field.querySelector("input[name=\"color\"]").value = event.target.value;
   field.querySelector(".active-color-swatch").style.setProperty("--swatch", event.target.value);
   field.querySelectorAll(".color-swatch").forEach((swatch) => swatch.classList.remove("selected"));
+});
+modalRoot.addEventListener("input", (event) => {
+  if (!event.target.matches("[data-share-search]")) return;
+  searchTimelineUsers(event.target.value).then((profiles) => {
+    const results = modalRoot.querySelector("[data-sharing-results]");
+    if (!results) return;
+    results.innerHTML = profiles.map((profile) => `<div class="sharing-result"><span>${safe(profile.display_name || profile.email)} <small>${safe(profile.email)}</small></span><button class="command-btn" data-action="share-user" data-user-id="${profile.user_id}" data-permission="viewer">Lecture</button><button class="command-btn" data-action="share-user" data-user-id="${profile.user_id}" data-permission="editor">Modification</button></div>`).join("");
+  }).catch((error) => { const results = modalRoot.querySelector("[data-sharing-results]"); if (results) results.textContent = error.message; });
 });
 app.addEventListener("change", (event) => {
   if (event.target.matches("[data-view-timeline]")) {
@@ -486,6 +531,7 @@ app.addEventListener("change", (event) => {
     return;
   }
   if (!event.target.matches("[data-theme-select]")) return;
+  if (!canEditActiveTimeline()) return;
   const timeline = activeTimeline();
   if (!timeline?.id) return;
   timeline.theme = event.target.value;
@@ -504,7 +550,7 @@ app.addEventListener("input", (event) => { if (event.target.matches("[data-timel
 app.addEventListener("search", (event) => { if (event.target.matches("[data-timeline-search]")) filterTimelineList(event.target.value); });
 app.addEventListener("keyup", (event) => { if (event.target.matches("[data-timeline-search]")) filterTimelineList(event.target.value); });
 
-app.addEventListener("contextmenu", (event) => { if (!state.readOnly && !isCombinedView() && event.target.closest("#timeline-canvas")) { event.preventDefault(); showContextMenu(event); } });
+app.addEventListener("contextmenu", (event) => { if (canEditActiveTimeline() && !isCombinedView() && event.target.closest("#timeline-canvas")) { event.preventDefault(); showContextMenu(event); } });
 app.addEventListener("pointerover", (event) => {
   const itemId = event.target.closest("[data-item]")?.dataset.item;
   if (itemId && !state.selectedItemId) showHoverDetails(itemId);
@@ -545,14 +591,14 @@ let drag;
 app.addEventListener("pointerdown", (event) => {
   const milestoneCard = event.target.closest(".milestone-card[data-item]");
   const milestone = milestoneCard?.closest(".milestone");
-  if (milestoneCard && !state.readOnly && milestoneCard.dataset.item === state.selectedItemId) {
+  if (milestoneCard && canEditActiveTimeline() && milestoneCard.dataset.item === state.selectedItemId) {
     const item = state.store.items.find(({ id }) => id === milestoneCard.dataset.item);
     drag = { item, type: "milestone", element: milestone, startX: event.clientX, start: item.start_date, moved: false };
     milestone.setPointerCapture(event.pointerId);
     return;
   }
 
-  const period = event.target.closest(".period"); if (!period || state.readOnly) return;
+  const period = event.target.closest(".period"); if (!period || !canEditActiveTimeline()) return;
   if (period.dataset.item !== state.selectedItemId) return;
   const item = state.store.items.find(({ id }) => id === period.dataset.item); const handle = event.target.closest("[data-drag]")?.dataset.drag || "move";
   drag = { item, type: "period", element: period, handle, startX: event.clientX, start: item.start_date, end: item.end_date, moved: false };

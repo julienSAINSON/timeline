@@ -34,6 +34,7 @@ beforeEach(() => {
     tl_items: { data: [], error: null },
     tl_raci_assignments: { data: [], error: null },
     tl_templates: { data: [], error: null },
+    tl_timeline_shares: { data: [], error: null },
   };
 });
 
@@ -100,6 +101,21 @@ describe("repositories Supabase", () => {
     expect(store.items[0].raci).toBe('{"accountable":"Claire"}');
     expect(calls).toContainEqual({ operation: "in", table: "tl_timelines", column: "public_token", values: ["token"] });
     expect(calls).toContainEqual({ operation: "eq", table: "tl_timelines", column: "is_public", value: true });
+  });
+
+  it("attribue le role owner ou editor aux frises chargees", async () => {
+    responses.tl_timelines.data = [
+      { id: "owned", user_id: "user-1", name: "Owner" },
+      { id: "shared", user_id: "user-2", name: "Shared" },
+    ];
+    responses.tl_timeline_shares.data = [{ timeline_id: "shared", user_id: "user-1", permission: "editor" }];
+
+    const store = await new SupabaseTimelineRepository({ id: "user-1" }).loadStore();
+
+    expect(store.timelines).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "owned", role: "owner" }),
+      expect.objectContaining({ id: "shared", role: "editor" }),
+    ]));
   });
 
   it("charge plusieurs frises pour une vue publique combinee", async () => {

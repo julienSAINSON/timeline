@@ -25,7 +25,7 @@ describe("storage local", () => {
 
   it("sauvegarde et recharge un store", async () => {
     const { loadStore, saveStore } = await import("../../src/storage.js");
-    const store = { timelines: [{ id: "timeline-1" }], items: [], recurrences: [], templates: [] };
+    const store = { timelines: [{ id: "timeline-1" }], items: [], recurrences: [], templates: [], shares: [] };
     saveStore(store);
     expect(loadStore()).toEqual(store);
   });
@@ -34,7 +34,7 @@ describe("storage local", () => {
     const { loadStore } = await import("../../src/storage.js");
     values.set("timeline-beta-v1", JSON.stringify({ timelines: [{ id: "old" }], items: [{ id: "item" }], recurrences: [] }));
 
-    expect(loadStore()).toEqual({ timelines: [{ id: "old" }], items: [{ id: "item" }], recurrences: [], templates: [] });
+    expect(loadStore()).toEqual({ timelines: [{ id: "old" }], items: [{ id: "item" }], recurrences: [], templates: [], shares: [] });
   });
 
   it("revient au jeu de demonstration si le JSON est corrompu", async () => {

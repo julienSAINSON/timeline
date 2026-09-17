@@ -2,7 +2,7 @@ import { getSupabaseClient } from "../supabase/auth/auth.js";
 import { loadStore, saveStore } from "./storage.js";
 import { DEMO_ITEMS, DEMO_TIMELINE } from "./data.js";
 
-function emptyStore() { return { timelines: [], items: [], recurrences: [], templates: [] }; }
+function emptyStore() { return { timelines: [], items: [], recurrences: [], templates: [], shares: [] }; }
 function raciAssignments(items) {
   return items.flatMap((item) => {
     if (item.type !== "milestone" || !item.raci) return [];
@@ -47,15 +47,27 @@ export class LocalTimelineRepository {
 export class SupabaseTimelineRepository {
   constructor(user, isSandbox = false) { this.user = user; this.isSandbox = isSandbox; this.client = getSupabaseClient(); }
   async loadStore() {
-    const [timelines, recurrences, items, assignments, templates] = await Promise.all([
-      this.client.from("tl_timelines").select("id,name,start_date,end_date,theme,is_sandbox,is_public,public_token,template_id,template_start_date").eq("is_sandbox", this.isSandbox).order("created_at"),
+    const [timelines, recurrences, items, assignments, templates, shares] = await Promise.all([
+      this.client.from("tl_timelines").select("id,name,start_date,end_date,theme,is_sandbox,is_public,public_token,template_id,template_start_date,user_id,updated_at").eq("is_sandbox", this.isSandbox).order("created_at"),
       this.client.from("tl_recurrences").select("*").order("created_at"),
       this.client.from("tl_items").select("*").order("start_date"),
       this.client.from("tl_raci_assignments").select("item_id,role,person"),
-      this.client.from("tl_templates").select("*").eq("is_sandbox", this.isSandbox).order("created_at")
+      this.client.from("tl_templates").select("*").eq("is_sandbox", this.isSandbox).order("created_at"),
+      this.client.from("tl_timeline_shares").select("id,timeline_id,user_id,permission,created_at,updated_at")
     ]);
-    [timelines, recurrences, items, assignments, templates].forEach(({ error }) => { if (error) throw new Error(error.message); });
-    const store = { timelines: timelines.data || [], recurrences: recurrences.data || [], items: enrichRaci(items.data || [], assignments.data || []), templates: (templates.data || []).map(normalizeTemplate) };
+    [timelines, recurrences, items, assignments, templates, shares].forEach(({ error }) => { if (error) throw new Error(error.message); });
+    const shareRows = shares.data || [];
+    const shareByTimeline = new Map(shareRows.map((share) => [share.timeline_id, share]));
+    const ownerIds = [...new Set((timelines.data || []).map(({ user_id }) => user_id).filter(Boolean))];
+    let ownerProfiles = [];
+    if (ownerIds.length) {
+      const profiles = await this.client.from("tl_profiles").select("user_id,display_name,email").in("user_id", ownerIds);
+      if (profiles.error) throw new Error(profiles.error.message);
+      ownerProfiles = profiles.data || [];
+    }
+    const ownerById = new Map(ownerProfiles.map((profile) => [profile.user_id, profile]));
+    const timelineRows = (timelines.data || []).map((timeline) => ({ ...timeline, owner_profile: ownerById.get(timeline.user_id) || null, role: timeline.user_id === this.user?.id ? "owner" : shareByTimeline.get(timeline.id)?.permission || null }));
+    const store = { timelines: timelineRows, recurrences: recurrences.data || [], items: enrichRaci(items.data || [], assignments.data || []), templates: (templates.data || []).map(normalizeTemplate), shares: shareRows };
     if (this.isSandbox && !store.timelines.length) return this.createSandboxDemo();
     return store;
   }
@@ -80,6 +92,14 @@ export class SupabaseTimelineRepository {
     const templateRows = (store.templates || []).map(({ id, name, description = "", iterationDurationDays, numberOfIterations, iterationLabel = "Iteration", iterationColor = "blue", iterationRenderMode = "rectangle", milestones = [], periods = [], is_sandbox = this.isSandbox }) => ({ id, name, description, iteration_duration_days: iterationDurationDays, number_of_iterations: numberOfIterations, iteration_label: iterationLabel, iteration_color: iterationColor, iteration_render_mode: iterationRenderMode, milestones, periods, is_sandbox, ...(is_sandbox ? { user_id: null } : {}) }));
     const timelineIds = store.timelines.map(({ id }) => id);
     const itemIds = store.items.filter(({ timeline_id }) => timelineIds.includes(timeline_id)).map(({ id }) => id);
+    if (timelineIds.length) {
+      const currentVersions = await this.client.from("tl_timelines").select("id,updated_at").in("id", timelineIds);
+      if (currentVersions.error) throw new Error(currentVersions.error.message);
+      const versions = new Map((currentVersions.data || []).map(({ id, updated_at }) => [id, updated_at]));
+      store.timelines.forEach((timeline) => {
+        if (timeline.updated_at && versions.get(timeline.id) && timeline.updated_at !== versions.get(timeline.id)) throw new Error(`La frise « ${timeline.name} » a ete modifiee depuis son chargement. Rechargez-la avant de sauvegarder.`);
+      });
+    }
     const deletedTemplates = await this.client.from("tl_templates").delete().eq("is_sandbox", this.isSandbox);
     if (deletedTemplates.error) throw new Error(deletedTemplates.error.message);
     if (templateRows.length) { const { error } = await this.client.from("tl_templates").upsert(templateRows); if (error) throw new Error(error.message); }
@@ -93,13 +113,21 @@ export class SupabaseTimelineRepository {
     if (itemRows.length) { const { error } = await this.client.from("tl_items").upsert(itemRows); if (error) throw new Error(error.message); }
     const assignments = raciAssignments(store.items);
     if (assignments.length) { const { error } = await this.client.from("tl_raci_assignments").upsert(assignments, { onConflict: "item_id,role,person" }); if (error) throw new Error(error.message); }
+    if (timelineIds.length) {
+      const refreshed = await this.client.from("tl_timelines").select("id,updated_at").in("id", timelineIds);
+      if (refreshed.error) throw new Error(refreshed.error.message);
+      const versions = new Map((refreshed.data || []).map(({ id, updated_at }) => [id, updated_at]));
+      store.timelines.forEach((timeline) => { if (versions.has(timeline.id)) timeline.updated_at = versions.get(timeline.id); });
+    }
   }
   async createSandboxDemo() {
     const timelineId = crypto.randomUUID();
     const store = {
-      timelines: [{ ...DEMO_TIMELINE, id: timelineId, public_token: crypto.randomUUID(), is_sandbox: true }],
+      timelines: [{ ...DEMO_TIMELINE, id: timelineId, public_token: crypto.randomUUID(), is_sandbox: true, role: "owner" }],
       items: DEMO_ITEMS.map((item) => ({ ...item, id: crypto.randomUUID(), timeline_id: timelineId })),
-      recurrences: []
+      recurrences: [],
+      templates: [],
+      shares: []
     };
     await this.saveStore(store);
     return store;
@@ -121,7 +149,7 @@ export class PublicTimelineRepository {
     ]);
     [recurrences, items, assignments].forEach(({ error }) => { if (error) throw new Error(error.message); });
     const itemIds = new Set((items.data || []).map(({ id }) => id));
-    return { timelines, recurrences: recurrences.data || [], items: enrichRaci(items.data || [], (assignments.data || []).filter(({ item_id }) => itemIds.has(item_id))), templates: [] };
+    return { timelines: timelines.map((timeline) => ({ ...timeline, role: "viewer" })), recurrences: recurrences.data || [], items: enrichRaci(items.data || [], (assignments.data || []).filter(({ item_id }) => itemIds.has(item_id))), templates: [], shares: [] };
   }
 }
 
