@@ -30,7 +30,7 @@ state.readOnly = Boolean(publicToken);
 let repository = null;
 
 function markDirty() { state.isDirty = true; app.querySelector("[data-action=\"save-timeline\"]")?.removeAttribute("disabled"); }
-function createTimeline(store, data) { const timeline = { id: crypto.randomUUID(), public_token: crypto.randomUUID(), is_public: false, is_sandbox: state.mode === "sandbox", theme: "atelier", ...data }; store.timelines.push(timeline); markDirty(); return timeline; }
+function createTimeline(store, data) { const timeline = { id: crypto.randomUUID(), public_token: crypto.randomUUID(), is_public: false, is_sandbox: state.mode === "sandbox", user_id: state.user?.id || null, role: "owner", theme: "atelier", ...data }; store.timelines.push(timeline); markDirty(); return timeline; }
 function saveItem(store, item) { const index = store.items.findIndex(({ id }) => id === item.id); if (index === -1) store.items.push(item); else store.items[index] = item; markDirty(); }
 function deleteItem(store, itemId) { store.items = store.items.filter(({ id }) => id !== itemId); markDirty(); }
 function saveStore(store) { return repository?.saveStore(store); }
