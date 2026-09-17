@@ -109,6 +109,15 @@ create table if not exists public.tl_timeline_shares (
 );
 create index if not exists tl_timeline_shares_user_id_idx on public.tl_timeline_shares(user_id);
 create index if not exists tl_timeline_shares_timeline_id_idx on public.tl_timeline_shares(timeline_id);
+create or replace function public.tl_user_owns_timeline(timeline_uuid uuid, profile_uuid uuid default auth.uid())
+returns boolean language sql stable security definer set search_path = public
+as $$ select exists (select 1 from public.tl_timelines where id = timeline_uuid and user_id = profile_uuid and not is_sandbox) $$;
+create or replace function public.tl_user_has_timeline_share(timeline_uuid uuid, profile_uuid uuid default auth.uid())
+returns boolean language sql stable security definer set search_path = public
+as $$ select exists (select 1 from public.tl_timeline_shares where timeline_id = timeline_uuid and user_id = profile_uuid) $$;
+create or replace function public.tl_user_can_edit_timeline(timeline_uuid uuid, profile_uuid uuid default auth.uid())
+returns boolean language sql stable security definer set search_path = public
+as $$ select public.tl_user_owns_timeline(timeline_uuid, profile_uuid) or exists (select 1 from public.tl_timeline_shares where timeline_id = timeline_uuid and user_id = profile_uuid and permission = 'editor') $$;
 create table if not exists public.tl_templates (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references auth.users(id) on delete cascade default auth.uid(),
@@ -221,16 +230,16 @@ create policy "Owners manage their templates" on public.tl_templates for all usi
 create policy "Sandbox templates are shared" on public.tl_templates for all using (is_sandbox) with check (is_sandbox and user_id is null);
 create policy "Authenticated users can find profiles" on public.tl_profiles for select to authenticated using (true);
 create policy "Owners manage timeline shares" on public.tl_timeline_shares for all to authenticated
-  using (exists (select 1 from public.tl_timelines where id = timeline_id and user_id = auth.uid()))
-  with check (exists (select 1 from public.tl_timelines where id = timeline_id and user_id = auth.uid()) and user_id <> auth.uid());
+  using (public.tl_user_owns_timeline(timeline_id))
+  with check (public.tl_user_owns_timeline(timeline_id) and user_id <> auth.uid());
 create policy "Users can see their shares" on public.tl_timeline_shares for select to authenticated using (user_id = auth.uid());
-create policy "Shared timelines are readable" on public.tl_timelines for select to authenticated using (exists (select 1 from public.tl_timeline_shares where timeline_id = id and user_id = auth.uid()));
+create policy "Shared timelines are readable" on public.tl_timelines for select to authenticated using (public.tl_user_has_timeline_share(id));
 create policy "Editors update shared timelines" on public.tl_timelines for update to authenticated
-  using (exists (select 1 from public.tl_timeline_shares where timeline_id = id and user_id = auth.uid() and permission = 'editor'))
+  using (public.tl_user_can_edit_timeline(id) and not public.tl_user_owns_timeline(id))
   with check (user_id = public.tl_timeline_owner(id));
-create policy "Shared timeline items are readable" on public.tl_items for select to authenticated using (exists (select 1 from public.tl_timeline_shares where timeline_id = tl_items.timeline_id and user_id = auth.uid()));
-create policy "Editors manage shared timeline items" on public.tl_items for all to authenticated using (exists (select 1 from public.tl_timeline_shares where timeline_id = tl_items.timeline_id and user_id = auth.uid() and permission = 'editor')) with check (exists (select 1 from public.tl_timeline_shares where timeline_id = tl_items.timeline_id and user_id = auth.uid() and permission = 'editor'));
-create policy "Shared recurrences are readable" on public.tl_recurrences for select to authenticated using (exists (select 1 from public.tl_timeline_shares where timeline_id = tl_recurrences.timeline_id and user_id = auth.uid()));
-create policy "Editors manage shared recurrences" on public.tl_recurrences for all to authenticated using (exists (select 1 from public.tl_timeline_shares where timeline_id = tl_recurrences.timeline_id and user_id = auth.uid() and permission = 'editor')) with check (exists (select 1 from public.tl_timeline_shares where timeline_id = tl_recurrences.timeline_id and user_id = auth.uid() and permission = 'editor'));
+create policy "Shared timeline items are readable" on public.tl_items for select to authenticated using (public.tl_user_has_timeline_share(timeline_id));
+create policy "Editors manage shared timeline items" on public.tl_items for all to authenticated using (public.tl_user_can_edit_timeline(timeline_id)) with check (public.tl_user_can_edit_timeline(timeline_id));
+create policy "Shared recurrences are readable" on public.tl_recurrences for select to authenticated using (public.tl_user_has_timeline_share(timeline_id));
+create policy "Editors manage shared recurrences" on public.tl_recurrences for all to authenticated using (public.tl_user_can_edit_timeline(timeline_id)) with check (public.tl_user_can_edit_timeline(timeline_id));
 create policy "Shared RACI assignments are readable" on public.tl_raci_assignments for select to authenticated using (exists (select 1 from public.tl_items join public.tl_timeline_shares on tl_timeline_shares.timeline_id = tl_items.timeline_id where tl_items.id = item_id and tl_timeline_shares.user_id = auth.uid()));
 create policy "Editors manage shared RACI assignments" on public.tl_raci_assignments for all to authenticated using (exists (select 1 from public.tl_items join public.tl_timeline_shares on tl_timeline_shares.timeline_id = tl_items.timeline_id where tl_items.id = item_id and tl_timeline_shares.user_id = auth.uid() and tl_timeline_shares.permission = 'editor')) with check (exists (select 1 from public.tl_items join public.tl_timeline_shares on tl_timeline_shares.timeline_id = tl_items.timeline_id where tl_items.id = item_id and tl_timeline_shares.user_id = auth.uid() and tl_timeline_shares.permission = 'editor'));
