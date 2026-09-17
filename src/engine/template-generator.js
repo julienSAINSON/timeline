@@ -4,9 +4,17 @@ function iterationStart(startDate, iterationIndex, durationDays) {
   return addDays(startDate, iterationIndex * durationDays);
 }
 
+function lastWorkingDay(iterationStartDate, durationDays) {
+  const date = addDays(iterationStartDate, durationDays - 1);
+  const dayOfWeek = date.getDay();
+  if (dayOfWeek === 6) date.setDate(date.getDate() - 1);
+  if (dayOfWeek === 0) date.setDate(date.getDate() - 2);
+  return date;
+}
+
 function resolveRelativeDate(iterationStartDate, durationDays, position) {
   if (position.kind === "first-day") return iterationStartDate;
-  if (position.kind === "last-day") return addDays(iterationStartDate, durationDays - 1);
+  if (position.kind === "last-day") return lastWorkingDay(iterationStartDate, durationDays);
   if (position.kind === "day-of-iteration") {
     if (!Number.isInteger(position.day) || position.day < 1 || position.day > durationDays) throw new Error("Le jour du jalon doit etre compris dans l'iteration.");
     return addDays(iterationStartDate, position.day - 1);

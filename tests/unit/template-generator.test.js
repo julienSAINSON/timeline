@@ -41,7 +41,15 @@ describe("generateTimelineFromTemplate", () => {
     const result = generateTimelineFromTemplate(agileTemplate, "2026-10-05");
 
     expect(result.items.filter(({ label }) => label === "System Demo").map(({ start_date, time, color }) => [start_date, time, color])).toEqual([["2026-10-14", "14:00", "violet"], ["2026-10-28", "14:00", "violet"], ["2026-11-11", "14:00", "violet"]]);
-    expect(result.items.filter(({ label }) => label === "Retrospective").map(({ start_date }) => start_date)).toEqual(["2026-10-18", "2026-11-01", "2026-11-15"]);
+    expect(result.items.filter(({ label }) => label === "Retrospective").map(({ start_date }) => start_date)).toEqual(["2026-10-16", "2026-10-30", "2026-11-13"]);
+  });
+
+  it("place le dernier jour ouvré lorsque la fin d'iteration tombe le week-end", () => {
+    const template = { ...agileTemplate, numberOfIterations: 1, periods: [], milestones: [{ name: "Cloture", position: { kind: "last-day" } }] };
+
+    const result = generateTimelineFromTemplate(template, "2026-10-05");
+
+    expect(result.items.find(({ label }) => label === "Cloture").start_date).toBe("2026-10-16");
   });
 
   it("traverse les mois et les annees sans modifier le modele", () => {
