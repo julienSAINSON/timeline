@@ -52,6 +52,14 @@ describe("generateTimelineFromTemplate", () => {
     expect(result.items.find(({ label }) => label === "Cloture").start_date).toBe("2026-10-16");
   });
 
+  it("reporte explicitement le samedi 12 decembre 2026 au vendredi 11", () => {
+    const template = { iterationDurationDays: 14, numberOfIterations: 1, periods: [], milestones: [{ name: "Cloture", position: { kind: "last-day" } }] };
+
+    const result = generateTimelineFromTemplate(template, "2026-11-29");
+
+    expect(result.items.find(({ label }) => label === "Cloture").start_date).toBe("2026-12-11");
+  });
+
   it("traverse les mois et les annees sans modifier le modele", () => {
     const template = structuredClone(agileTemplate);
     const snapshot = structuredClone(template);

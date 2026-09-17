@@ -1,10 +1,15 @@
 import { addDays, daysBetween, formatDate, parseDate } from "./date-utils.js";
 
+export const START_PADDING_DAYS = 12;
+export const END_PADDING_DAYS = 15;
+
 export function createScale(timeline, pixelsPerDay) {
-  const totalDays = Math.max(1, daysBetween(timeline.start_date, timeline.end_date));
+  const start = addDays(timeline.start_date, -START_PADDING_DAYS);
+  const end = addDays(timeline.end_date, END_PADDING_DAYS);
+  const totalDays = Math.max(1, daysBetween(start, end));
   return {
-    start: parseDate(timeline.start_date),
-    end: parseDate(timeline.end_date),
+    start,
+    end,
     pixelsPerDay,
     width: Math.max(900, totalDays * pixelsPerDay),
   };

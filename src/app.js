@@ -4,7 +4,7 @@ import { layoutMilestones, positionMilestoneLanes } from "./engine/milestone-lay
 import { layoutPeriods, periodStartOffset, periodWidth } from "./engine/period-layout.js";
 import { generateOccurrences } from "./engine/recurrence.js";
 import { generateTimelineFromTemplate } from "./engine/template-generator.js";
-import { createScale, dateToX, formatTick, generateCalendarContext, generateTicks, xToDate } from "./engine/timeline-scale.js";
+import { END_PADDING_DAYS, START_PADDING_DAYS, createScale, dateToX, formatTick, generateCalendarContext, generateTicks, xToDate } from "./engine/timeline-scale.js";
 import { LocalTimelineRepository, PublicTimelineRepository, SupabaseTimelineRepository } from "./repositories.js";
 import { getCurrentUser, initAuth, loginWithGoogle, logout } from "../supabase/auth/auth.js";
 import { getTimelineShareDetails, removeTimelineShare, searchTimelineUsers, shareTimeline, updateTimelinePermission } from "./timeline-sharing.js";
@@ -98,7 +98,7 @@ function activeTimeline() {
   return { id: null, name: `Vue de ${timelines.length} frises`, start_date: timelines.map(({ start_date }) => start_date).sort()[0], end_date: timelines.map(({ end_date }) => end_date).sort().at(-1) };
 }
 function timelineViewportWidth() { return Math.max(900, document.querySelector("#timeline-frame")?.clientWidth || window.innerWidth - (state.readOnly ? 0 : 302)); }
-function minimumZoom(timeline = activeTimeline()) { return timeline ? Math.max(1, timelineViewportWidth() / Math.max(1, daysBetween(timeline.start_date, timeline.end_date))) : 1; }
+function minimumZoom(timeline = activeTimeline()) { return timeline ? Math.max(1, timelineViewportWidth() / Math.max(1, daysBetween(timeline.start_date, timeline.end_date) + START_PADDING_DAYS + END_PADDING_DAYS)) : 1; }
 function fitTimelineToViewport() { state.zoom = minimumZoom(); }
 function currentScale(timeline = activeTimeline()) { return createScale(timeline, state.zoom); }
 function items() { return state.store.items.filter(({ timeline_id }) => selectedTimelines().some(({ id }) => id === timeline_id)); }
