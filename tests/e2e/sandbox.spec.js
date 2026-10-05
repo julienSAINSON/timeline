@@ -92,3 +92,25 @@ test("cree une frise depuis un modele de cadence", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Planning Agile" })).toBeVisible();
   await expect(page.getByText("System Demo", { exact: true })).toHaveCount(6);
 });
+
+test("enregistre les modifications d'un modele et les conserve apres rechargement", async ({ page }) => {
+  await startSandbox(page);
+  await page.getByRole("button", { name: "Modeles", exact: true }).click();
+  await page.getByRole("button", { name: "+ Creer un modele" }).click();
+  await page.locator('input[name="name"]').fill("Modele avant modification");
+  await page.locator('input[name="milestone_name"]').fill("Jalon test");
+  await page.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText("Modele enregistre.");
+
+  const templateRow = page.locator(".template-row").filter({ hasText: "Modele avant modification" });
+  await templateRow.getByRole("button", { name: "Modifier" }).click();
+  await page.locator('input[name="name"]').fill("Modele modifie");
+  await page.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText("Modele enregistre.");
+  await page.locator(".modal-close").click();
+
+  await page.reload();
+  await page.getByRole("button", { name: "Modeles", exact: true }).click();
+  await expect(page.locator(".template-row")).toContainText("Modele modifie");
+  await expect(page.locator(".template-row")).not.toContainText("Modele avant modification");
+});

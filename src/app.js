@@ -277,7 +277,7 @@ function templateForm(template = {}) {
   return `<form data-form="template" data-template-id="${template.id || ""}"><div class="form-grid"><label class="field wide">Nom<input required name="name" maxlength="120" value="${safe(template.name || "")}" placeholder="Iteration Agile 2 semaines" autofocus></label><label class="field wide">Description<textarea name="description" maxlength="2000">${safe(template.description || "")}</textarea></label><label class="field">Duree d'une iteration (jours)<input required type="number" min="1" name="iterationDurationDays" value="${template.iterationDurationDays || 14}"></label><label class="field">Nombre d'iterations<input required type="number" min="1" max="1000" name="numberOfIterations" value="${template.numberOfIterations || 10}"></label><label class="field">Libelle des iterations<input name="iterationLabel" value="${safe(template.iterationLabel || "Iteration")}"></label><label class="field">Couleur<select name="iterationColor">${colorOptions(template.iterationColor || "blue")}</select></label></div><fieldset class="template-milestones"><legend>Jalons recurrents</legend><div class="template-milestone-table">${templateMilestoneHeaders()}<div data-template-milestones>${milestones}</div></div><button type="button" class="command-btn" data-action="add-template-milestone">+ Ajouter un jalon</button><small>Iteration vide = toutes les iterations. Jour ISO : lundi 1, dimanche 7.</small></fieldset><fieldset class="template-milestones"><legend>Periodes recurrentes</legend><div class="template-period-table">${templatePeriodHeaders()}<div data-template-periods>${periods}</div></div><button type="button" class="command-btn" data-action="add-template-period">+ Ajouter une periode</button><small>Definissez le debut et la fin de chaque periode relativement a l'iteration.</small></fieldset><div class="modal-actions"><button type="button" class="command-btn danger" data-action="delete-template" ${template.id ? "" : "hidden"}>Supprimer</button><div class="right"><button type="button" class="command-btn" data-action="close-modal">Annuler</button><button class="command-btn primary">Enregistrer</button></div></div></form>`;
 }
 function templateList() { return `<div class="template-list">${state.store.templates.length ? state.store.templates.map((template) => `<article class="template-row"><div><strong>${safe(template.name)}</strong><span>${template.numberOfIterations} iterations - ${template.iterationDurationDays} jours / iteration</span>${template.description ? `<p>${safe(template.description)}</p>` : ""}</div><div class="template-actions"><button class="command-btn" data-action="use-template" data-template="${template.id}">Utiliser</button><button class="icon-btn" data-action="edit-template" data-template="${template.id}" title="Modifier" aria-label="Modifier">&#9998;</button><button class="icon-btn" data-action="duplicate-template" data-template="${template.id}" title="Dupliquer" aria-label="Dupliquer">&#10697;</button></div></article>`).join("") : `<p class="empty-note">Aucun modele. Creez votre premiere cadence.</p>`}</div>`; }
-function openTemplateManager() { openModal("Modeles de cadence", `<div class="modal-actions"><span></span><button class="command-btn primary" data-action="new-template">+ Creer un modele</button></div>${templateList()}`); }
+function openTemplateManager(message = "") { openModal("Modeles de cadence", `${message ? `<p role="status">${safe(message)}</p>` : ""}<div class="modal-actions"><span></span><button class="command-btn primary" data-action="new-template">+ Creer un modele</button></div>${templateList()}`); }
 function timelineForm(templateId = "") { return `<form data-form="timeline"><div class="form-grid"><label class="field wide">Nom<input required name="name" placeholder="Roadmap produit" autofocus></label><label class="field wide">Modele de cadence<select name="template_id">${templateOptions(templateId)}</select></label><label class="field">Date de debut<input required type="date" name="start_date" value="2026-09-01"></label><label class="field">Date de fin (frise manuelle)<input type="date" name="end_date" value="2027-01-31"></label><label class="field">Nombre d'iterations (modele)<input type="number" min="1" name="number_of_iterations" placeholder="Defaut du modele"></label></div><div class="modal-actions"><span></span><button class="command-btn primary">Creer</button></div></form>`; }
 function timelineTitleForm(timeline) { return `<form data-form="timeline-title"><label class="field">Titre de la frise<input required name="name" maxlength="120" value="${safe(timeline.name)}" autofocus></label><div class="modal-actions"><span></span><div class="right"><button class="command-btn" type="button" data-action="close-modal">Annuler</button><button class="command-btn primary">Enregistrer</button></div></div></form>`; }
 function openModal(title, content) { const modalClass = title.toLocaleLowerCase().includes("modele") ? " template-modal" : ""; modalRoot.innerHTML = `<div class="modal-backdrop"><section class="modal${modalClass}"><button class="modal-close" type="button" data-action="close-modal" aria-label="Fermer la fenetre" title="Fermer">&times;</button><h2>${title}</h2>${content}</section></div>`; }
@@ -494,12 +494,34 @@ document.addEventListener("click", (event) => {
   if (seriesType) { closeModal(); openModal(`Creer une serie de ${seriesType === "period" ? "periodes" : "jalons"}`, recurrenceForm(seriesType)); }
 });
 
-document.addEventListener("submit", (event) => {
+document.addEventListener("submit", async (event) => {
   event.preventDefault(); const data = Object.fromEntries(new FormData(event.target));
   if (data.form === "") return;
   if (data.color) rememberColor(data.color);
   if (["timeline-title", "item", "recurrence"].includes(event.target.dataset.form) && !canEditActiveTimeline()) return;
-  if (event.target.dataset.form === "template") { const template = readTemplateForm(event.target); const index = state.store.templates.findIndex(({ id }) => id === template.id); if (index === -1) state.store.templates.push(template); else state.store.templates[index] = template; markDirty(); closeModal(); openTemplateManager(); return; }
+  if (event.target.dataset.form === "template") {
+    const form = event.target;
+    const submitButton = event.submitter || form.querySelector("button[type=submit]");
+    const saveStatus = document.createElement("p");
+    saveStatus.setAttribute("role", "status");
+    form.querySelector(".modal-actions")?.before(saveStatus);
+    if (submitButton) { submitButton.disabled = true; submitButton.textContent = "Enregistrement..."; }
+    try {
+      const template = readTemplateForm(form);
+      const index = state.store.templates.findIndex(({ id }) => id === template.id);
+      if (index === -1) state.store.templates.push(template);
+      else state.store.templates[index] = template;
+      markDirty();
+      await saveStore(state.store);
+      state.isDirty = false;
+      closeModal();
+      openTemplateManager("Modele enregistre.");
+    } catch (error) {
+      saveStatus.textContent = `Enregistrement impossible : ${error.message}`;
+      if (submitButton) { submitButton.disabled = false; submitButton.textContent = "Enregistrer"; }
+    }
+    return;
+  }
   if (event.target.dataset.form === "timeline") { const template = templateById(data.template_id); const timeline = template ? createTimelineFromTemplate(state.store, data, template) : createTimeline(state.store, { name: data.name, start_date: data.start_date, end_date: data.end_date }); state.activeTimelineId = timeline.id; state.selectedTimelineIds = [timeline.id]; state.viewTimelineIds = null; closeModal(); render(); return; }
   if (event.target.dataset.form === "timeline-title") { activeTimeline().name = data.name.trim(); markDirty(); closeModal(); render(); return; }
   if (event.target.dataset.form === "item") { const raci = data.type === "milestone" ? JSON.stringify({ responsible: data.raci_responsible, accountable: data.raci_accountable, consulted: data.raci_consulted, informed: data.raci_informed }) : ""; const existingItem = state.store.items.find(({ id }) => id === data.id); delete data.raci_responsible; delete data.raci_accountable; delete data.raci_consulted; delete data.raci_informed; saveItem(state.store, { ...existingItem, ...data, raci, id: data.id || crypto.randomUUID(), timeline_id: existingItem?.timeline_id || state.activeTimelineId, recurrence_id: existingItem?.recurrence_id || null }); closeModal(); render(); return; }
