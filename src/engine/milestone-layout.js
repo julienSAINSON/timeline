@@ -1,4 +1,4 @@
-import { dateToX } from "./timeline-scale.js";
+import { dateTimeToX } from "./timeline-scale.js";
 
 export function estimateLabelWidth(label) {
   return Math.max(116, Math.min(240, label.length * 7.5 + 34));
@@ -22,9 +22,9 @@ function firstAvailableLevel(lane, interval) {
 export function layoutMilestones(items, scale) {
   const lanes = { top: [], bottom: [] };
   return [...items]
-    .sort((left, right) => dateToX(left.start_date, scale) - dateToX(right.start_date, scale))
+    .sort((left, right) => dateTimeToX(left.start_date, left.time, scale) - dateTimeToX(right.start_date, right.time, scale))
     .map((item, index) => {
-      const x = dateToX(item.start_date, scale);
+      const x = dateTimeToX(item.start_date, item.time, scale);
       const width = estimateLabelWidth(item.label);
       const interval = { start: x - width / 2, end: x + width / 2 };
       const preferredSide = index % 2 === 0 ? "top" : "bottom";

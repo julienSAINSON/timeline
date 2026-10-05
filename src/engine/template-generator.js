@@ -5,10 +5,9 @@ function iterationStart(startDate, iterationIndex, durationDays) {
 }
 
 function lastWorkingDay(iterationStartDate, durationDays) {
+  const start = parseDate(iterationStartDate);
   const date = addDays(iterationStartDate, durationDays - 1);
-  const dayOfWeek = date.getDay();
-  if (dayOfWeek === 6) date.setDate(date.getDate() - 1);
-  if (dayOfWeek === 0) date.setDate(date.getDate() - 2);
+  while ((date.getDay() === 0 || date.getDay() === 6) && date > start) date.setDate(date.getDate() - 1);
   return date;
 }
 
@@ -41,7 +40,7 @@ export function generateTimelineFromTemplate(template, startDate, options = {}) 
   const items = [];
   for (let index = 0; index < numberOfIterations; index += 1) {
     const start = iterationStart(startDate, index, durationDays);
-    const end = addDays(start, durationDays - 1);
+    const end = lastWorkingDay(start, durationDays);
     items.push({
       id: itemId(),
       type: "period",
@@ -98,7 +97,7 @@ export function generateTimelineFromTemplate(template, startDate, options = {}) 
   }
 
   const timelineStart = formatDate(parseDate(startDate));
-  const timelineEnd = formatDate(addDays(startDate, numberOfIterations * durationDays - 1));
+  const timelineEnd = formatDate(lastWorkingDay(startDate, numberOfIterations * durationDays));
   return {
     start_date: timelineStart,
     end_date: timelineEnd,

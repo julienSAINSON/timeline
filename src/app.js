@@ -4,7 +4,7 @@ import { layoutMilestones, positionMilestoneLanes } from "./engine/milestone-lay
 import { layoutPeriods, periodStartOffset, periodWidth } from "./engine/period-layout.js";
 import { generateOccurrences } from "./engine/recurrence.js";
 import { generateTimelineFromTemplate } from "./engine/template-generator.js";
-import { END_PADDING_DAYS, START_PADDING_DAYS, createScale, dateToX, formatTick, generateCalendarContext, generateTicks, xToDate } from "./engine/timeline-scale.js";
+import { END_PADDING_DAYS, MAX_DAY_ZOOM, MIN_HOUR_ZOOM, START_PADDING_DAYS, createScale, dateTimeToX, dateToX, formatTick, generateCalendarContext, generateTicks, xToDate, zoomIn, zoomOut } from "./engine/timeline-scale.js";
 import { LocalTimelineRepository, PublicTimelineRepository, SupabaseTimelineRepository } from "./repositories.js";
 import { getCurrentUser, initAuth, loginWithGoogle, logout } from "../supabase/auth/auth.js";
 import { getTimelineShareDetails, removeTimelineShare, searchTimelineUsers, shareTimeline, updateTimelinePermission } from "./timeline-sharing.js";
@@ -101,6 +101,7 @@ function timelineViewportWidth() { return Math.max(900, document.querySelector("
 function minimumZoom(timeline = activeTimeline()) { return timeline ? Math.max(1, timelineViewportWidth() / Math.max(1, daysBetween(timeline.start_date, timeline.end_date) + START_PADDING_DAYS + END_PADDING_DAYS)) : 1; }
 function fitTimelineToViewport() { state.zoom = minimumZoom(); }
 function currentScale(timeline = activeTimeline()) { return createScale(timeline, state.zoom); }
+function zoomReadout(scale) { return scale.pixelsPerDay >= MIN_HOUR_ZOOM ? `${Math.round(scale.pixelsPerDay / 24)}px/h` : `${Math.round(scale.pixelsPerDay)}px/j`; }
 function items() { return state.store.items.filter(({ timeline_id }) => selectedTimelines().some(({ id }) => id === timeline_id)); }
 function currentTheme(timeline = activeTimeline()) { return THEMES[timeline?.theme] ? timeline.theme : "atelier"; }
 function themeOptions() { return Object.entries(THEMES).map(([id, label]) => `<option value="${id}" ${id === currentTheme() ? "selected" : ""}>${label}</option>`).join(""); }
@@ -194,10 +195,11 @@ function render() {
   const annotationTop = layout.annotationTop + verticalOffset;
   const periods = layout.periods;
   const milestones = layout.milestones.map((item) => ({ ...item, cardTop: item.cardTop + verticalOffset }));
-  const todayX = dateToX(new Date(), scale);
+  const now = new Date();
+  const todayX = dateTimeToX(now, `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`, scale);
   const calendarContext = generateCalendarContext(scale);
   const ticks = generateTicks(scale);
-  const calendarMode = ticks[0]?.mode || "quarter";
+  const calendarMode = scale.pixelsPerDay >= MIN_HOUR_ZOOM ? "hour" : ticks[0]?.mode || "quarter";
   const canvasHeight = fullyZoomedOutLayout.contentBottom - fullyZoomedOutLayout.contentTop + 32;
   const timelineRole = activeTimelineRole();
   const roleBadge = timelineRole === "viewer" ? `<span class="permission-badge viewer">Lecture seule</span>` : timelineRole === "editor" ? `<span class="permission-badge editor">Modification</span>` : "";
@@ -206,9 +208,9 @@ function render() {
   const publicShareButton = canShare ? `<button class="icon-btn" data-action="share" title="Partager publiquement" aria-label="Partager publiquement">&#10548;</button>` : "";
   app.innerHTML = `<div class="shell theme-${currentTheme()} ${state.readOnly ? "public-view" : ""}">
     ${state.readOnly ? "" : `<aside class="sidebar"><div>${state.mode === "sandbox" ? `<button class="brand" data-action="return-access" title="Revenir a l'accueil">time<span>line</span></button>` : `<div class="brand">time<span>line</span></div>`}<button class="new-timeline" data-action="new-timeline">+ Nouvelle frise</button><button class="command-btn templates-button" data-action="manage-templates">Modeles</button><nav><div class="sidebar-heading"><div class="sidebar-label">Mes frises</div><input class="timeline-search" type="search" data-timeline-search value="${safe(state.timelineSearch)}" placeholder="Rechercher" aria-label="Rechercher une frise"></div><div class="timeline-list">${timelineSidebarGroup("Mes frises", state.store.timelines.filter(({ role }) => role === "owner" || !role))}${timelineSidebarGroup("Partagees avec moi", state.store.timelines.filter(({ role }) => role === "viewer" || role === "editor"))}</div><button class="command-btn view-timelines" data-action="view-timelines" ${state.selectedTimelineIds.length ? "" : "disabled"}>Vue</button></nav></div></aside>`}
-    <section class="workspace">${state.readOnly ? "" : `${state.mode === "sandbox" ? `<aside class="sandbox-banner"><span>&#9883; Mode bac a sable</span><span>Cette frise est enregistree uniquement dans ce navigateur. Elle ne sera pas sauvegardee dans votre compte.</span><button data-action="return-access">Se connecter pour sauvegarder dans votre compte</button></aside>` : ""}<header class="topbar"><div><div class="eyebrow">Editeur ${roleBadge}</div><div class="timeline-title"><h1>${safe(timeline.name)}</h1>${canEdit ? `<button class="icon-btn edit-title" data-action="edit-timeline-title" title="Modifier le titre" aria-label="Modifier le titre">&#9998;</button>` : ""}${timelineRole === "owner" ? `<button class="icon-btn delete-timeline" data-action="delete-timeline" title="Supprimer la frise" aria-label="Supprimer la frise">&#128465;</button>` : ""}${canEdit ? `<button class="icon-btn save-timeline" data-action="save-timeline" title="Sauvegarder" aria-label="Sauvegarder" ${state.isDirty ? "" : "disabled"}>&#128190;</button>` : ""}${canShare ? `<button class="icon-btn" data-action="manage-sharing" title="Partager avec des utilisateurs" aria-label="Partager avec des utilisateurs">&#128101;</button>` : ""}${publicShareButton}</div><div class="range">${formatHumanDate(timeline.start_date)} - ${formatHumanDate(timeline.end_date)}</div></div><div class="controls"><label class="theme-picker" title="Apparence de la frise"><span>Theme</span><select data-theme-select aria-label="Theme visuel">${themeOptions()}</select></label><button class="icon-btn" data-action="zoom-out" title="Dezoomer">-</button><div class="zoom-readout">${Math.round(scale.pixelsPerDay)}px/j</div><button class="icon-btn" data-action="zoom-in" title="Zoomer">+</button><button class="command-btn" data-action="today">Aujourd'hui</button>${state.mode === "authenticated" ? `<span class="user-email" title="Compte connecte">${safe(state.user?.email || "")}</span><button class="command-btn" data-action="account">Compte</button><button class="command-btn" data-action="logout">Deconnexion</button>` : ""}</div></header>`}
+    <section class="workspace">${state.readOnly ? "" : `${state.mode === "sandbox" ? `<aside class="sandbox-banner"><span>&#9883; Mode bac a sable</span><span>Cette frise est enregistree uniquement dans ce navigateur. Elle ne sera pas sauvegardee dans votre compte.</span><button data-action="return-access">Se connecter pour sauvegarder dans votre compte</button></aside>` : ""}<header class="topbar"><div><div class="eyebrow">Editeur ${roleBadge}</div><div class="timeline-title"><h1>${safe(timeline.name)}</h1>${canEdit ? `<button class="icon-btn edit-title" data-action="edit-timeline-title" title="Modifier le titre" aria-label="Modifier le titre">&#9998;</button>` : ""}${timelineRole === "owner" ? `<button class="icon-btn delete-timeline" data-action="delete-timeline" title="Supprimer la frise" aria-label="Supprimer la frise">&#128465;</button>` : ""}${canEdit ? `<button class="icon-btn save-timeline" data-action="save-timeline" title="Sauvegarder" aria-label="Sauvegarder" ${state.isDirty ? "" : "disabled"}>&#128190;</button>` : ""}${canShare ? `<button class="icon-btn" data-action="manage-sharing" title="Partager avec des utilisateurs" aria-label="Partager avec des utilisateurs">&#128101;</button>` : ""}${publicShareButton}</div><div class="range">${formatHumanDate(timeline.start_date)} - ${formatHumanDate(timeline.end_date)}</div></div><div class="controls"><label class="theme-picker" title="Apparence de la frise"><span>Theme</span><select data-theme-select aria-label="Theme visuel">${themeOptions()}</select></label><button class="icon-btn" data-action="zoom-out" title="Dezoomer">-</button><div class="zoom-readout">${zoomReadout(scale)}</div><button class="icon-btn" data-action="zoom-in" title="Zoomer">+</button><button class="command-btn" data-action="today">Aujourd'hui</button>${state.mode === "authenticated" ? `<span class="user-email" title="Compte connecte">${safe(state.user?.email || "")}</span><button class="command-btn" data-action="account">Compte</button><button class="command-btn" data-action="logout">Deconnexion</button>` : ""}</div></header>`}
     <div class="timeline-frame-shell"><aside class="hover-details" id="hover-details" aria-live="polite"></aside><div class="timeline-frame" id="timeline-frame"><div class="timeline-canvas calendar-${calendarMode}" id="timeline-canvas" style="width:${scale.width}px;height:${canvasHeight}px;--axis-top:${axisTop}px;--calendar-top:${calendarTop}px;--period-top:${periodTop}px;--annotation-top:${annotationTop}px">
-      ${ticks.map((tick) => `<div class="tick" style="left:${tick.x}px"><span class="tick-label ${tick.isWeekend ? "weekend" : ""}">${formatTick(tick)}</span></div>`).join("")}
+      ${ticks.map((tick) => `<div class="tick" style="left:${tick.x}px"><span class="tick-label ${tick.isWeekend ? "weekend" : ""} ${tick.mode === "hour" ? "hour" : tick.mode === "day" && calendarMode === "hour" ? "day" : ""}">${formatTick(tick)}</span>${tick.dayLabel ? `<span class="tick-label day ${tick.isWeekend ? "weekend" : ""}">${tick.dayLabel}</span>` : ""}</div>`).join("")}
       <div class="calendar-months">${calendarContext.months.map((month, index) => `<span class="calendar-context month" style="left:${month.x}px;width:${(calendarContext.months[index + 1]?.x || scale.width) - month.x}px">${month.label}</span>`).join("")}</div>
       <div class="calendar-weeks">${calendarContext.weeks.map((week, index) => `<span class="calendar-context week" style="left:${week.x}px;width:${(calendarContext.weeks[index + 1]?.x || scale.width) - week.x}px">${week.label}</span>`).join("")}</div>
       <div class="axis" style="width:${scale.width}px"></div>
@@ -409,8 +411,8 @@ document.addEventListener("click", (event) => {
   if (action === "return-access") { localStorage.removeItem(ACCESS_MODE_KEY); repository = null; state.mode = null; renderAccessScreen(); return; }
   if (action === "account") { const identity = state.user.user_metadata?.full_name || state.user.email || "Utilisateur connecte"; openModal("Compte", `<p>${safe(identity)}</p><div class="modal-actions"><span></span><button class="command-btn danger" data-action="logout">Se deconnecter</button></div>`); return; }
   if (action === "logout") { logout().then(() => { localStorage.removeItem(ACCESS_MODE_KEY); repository = null; state.mode = null; state.user = null; state.store = { timelines: [], items: [], recurrences: [], templates: [], shares: [] }; state.activeTimelineId = null; closeModal(); renderAccessScreen(); }).catch((error) => openModal("Deconnexion", `<p>${safe(error.message)}</p>`)); return; }
-  if (action === "zoom-in") { state.zoom = Math.min(34, state.zoom + 2); renderPreservingDetails(); }
-  if (action === "zoom-out") { state.zoom = Math.max(minimumZoom(), state.zoom - 2); renderPreservingDetails(); }
+  if (action === "zoom-in") { state.zoom = zoomIn(state.zoom, 2); renderPreservingDetails(); }
+  if (action === "zoom-out") { state.zoom = zoomOut(state.zoom, minimumZoom(), 2); renderPreservingDetails(); }
   if (action === "today") scrollToToday();
   if (action === "view-timelines") { state.viewTimelineIds = [...state.selectedTimelineIds]; state.activeTimelineId = state.viewTimelineIds[0] || null; state.selectedItemId = null; state.detailsItemId = null; renderFittedTimeline(); return; }
   if (action === "edit-timeline-title" && !isCombinedView()) openModal("Modifier le titre", timelineTitleForm(activeTimeline()));
@@ -561,6 +563,10 @@ app.addEventListener("pointerout", (event) => {
 });
 document.addEventListener("click", (event) => { if (!event.target.closest(".context-menu") && !event.target.closest("#timeline-canvas")) { const menu = modalRoot.querySelector(".context-menu"); if (menu) menu.remove(); } });
 let zoomWheelDelta = 0;
+let wheelGestureActive = false;
+let wheelGestureCanCrossDayCeiling = false;
+let wheelGestureTimeout;
+let dayCeilingPauseRequired = false;
 app.addEventListener("wheel", (event) => {
   const frame = event.target.closest("#timeline-frame");
   const canvas = event.target.closest("#timeline-canvas");
@@ -568,6 +574,17 @@ app.addEventListener("wheel", (event) => {
   if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
 
   event.preventDefault();
+  const startsNewGesture = !wheelGestureActive;
+  if (startsNewGesture) {
+    wheelGestureActive = true;
+    zoomWheelDelta = 0;
+    wheelGestureCanCrossDayCeiling = dayCeilingPauseRequired && state.zoom === MAX_DAY_ZOOM;
+  }
+  window.clearTimeout(wheelGestureTimeout);
+  wheelGestureTimeout = window.setTimeout(() => {
+    wheelGestureActive = false;
+    zoomWheelDelta = 0;
+  }, 250);
   if (zoomWheelDelta !== 0 && Math.sign(zoomWheelDelta) !== Math.sign(event.deltaY)) zoomWheelDelta = 0;
   zoomWheelDelta += event.deltaY;
   if (Math.abs(zoomWheelDelta) < 12) return;
@@ -575,16 +592,22 @@ app.addEventListener("wheel", (event) => {
   const previousScale = currentScale();
   const canvasBounds = canvas.getBoundingClientRect();
   const frameBounds = frame.getBoundingClientRect();
-  const focusDate = xToDate(event.clientX - canvasBounds.left, previousScale);
+  const focusPositionDays = (event.clientX - canvasBounds.left) / previousScale.pixelsPerDay;
   const zoomStep = zoomWheelDelta < 0 ? 1 : -1;
   zoomWheelDelta = 0;
-  const nextZoom = Math.max(minimumZoom(), Math.min(34, state.zoom + zoomStep));
+  if (zoomStep < 0) dayCeilingPauseRequired = false;
+  if (zoomStep > 0 && state.zoom === MAX_DAY_ZOOM && dayCeilingPauseRequired && !wheelGestureCanCrossDayCeiling) return;
+  const nextZoom = zoomStep > 0
+    ? zoomIn(state.zoom, zoomStep)
+    : zoomOut(state.zoom, minimumZoom(), -zoomStep);
   if (nextZoom === state.zoom) return;
 
+  if (zoomStep > 0 && state.zoom < MAX_DAY_ZOOM && nextZoom === MAX_DAY_ZOOM) dayCeilingPauseRequired = true;
+  if (nextZoom >= MIN_HOUR_ZOOM) dayCeilingPauseRequired = false;
   state.zoom = nextZoom;
   render();
   const nextFrame = document.querySelector("#timeline-frame");
-  nextFrame.scrollLeft = Math.max(0, dateToX(focusDate, currentScale()) - (event.clientX - frameBounds.left));
+  nextFrame.scrollLeft = Math.max(0, focusPositionDays * currentScale().pixelsPerDay - (event.clientX - frameBounds.left));
 }, { passive: false });
 
 let drag;

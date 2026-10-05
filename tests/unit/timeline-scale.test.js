@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createScale, dateToX, formatTick, generateCalendarContext, generateTicks, getScaleMode, xToDate } from "../../src/engine/timeline-scale.js";
+import { createScale, dateTimeToX, dateToX, formatTick, generateCalendarContext, generateTicks, getScaleMode, xToDate, zoomIn, zoomOut } from "../../src/engine/timeline-scale.js";
 
 const timeline = { start_date: "2026-01-01", end_date: "2026-01-31" };
 
@@ -22,6 +22,38 @@ describe("timeline-scale", () => {
     expect(getScaleMode(3).unit).toBe("month");
     expect(getScaleMode(10).unit).toBe("week");
     expect(getScaleMode(26).unit).toBe("day");
+    expect(getScaleMode(72).unit).toBe("hour");
+  });
+
+  it("passe du maximum journalier au zoom horaire, puis revient au jour", () => {
+    expect(zoomIn(33, 1)).toBe(34);
+    expect(zoomIn(34)).toBe(72);
+    expect(zoomIn(72)).toBe(86);
+    expect(zoomOut(72, 1)).toBe(34);
+    expect(zoomOut(86, 1)).toBe(72);
+  });
+
+  it("genere des graduations horaires et positionne les heures des jalons", () => {
+    const scale = createScale(timeline, 72);
+    const hourTicks = generateTicks(scale).filter((tick) => tick.date === "2026-01-01");
+    expect(hourTicks.map(formatTick)).toEqual(expect.arrayContaining(["00h", "12h"]));
+    expect(formatTick(hourTicks[0])).toBe("00h");
+    expect(hourTicks.find((tick) => tick.hour === 0).dayLabel).toBe("1");
+    expect(dateTimeToX("2026-01-01", "12:30", scale) - dateToX("2026-01-01", scale)).toBe(37.5);
+    expect(generateCalendarContext(scale).weeks.length).toBeGreaterThan(0);
+  });
+
+  it("affiche chaque heure au zoom maximal meme sur une frise longue", () => {
+    const scale = createScale({ start_date: "2026-01-01", end_date: "2026-12-31" }, 1152);
+    const ticks = generateTicks(scale);
+    const hourTicks = ticks.filter((tick) => tick.mode === "hour");
+    const intervals = hourTicks.slice(1).map((tick, index) => tick.x - hourTicks[index].x);
+
+    expect(hourTicks.length).toBeGreaterThan(2000);
+    expect(new Set(intervals)).toEqual(new Set([48]));
+    expect(hourTicks.some((tick) => tick.date === "2026-01-02" && tick.hour === 0 && tick.dayLabel === "2")).toBe(true);
+    expect(hourTicks.some((tick) => tick.date === "2026-01-02" && tick.hour === 1)).toBe(true);
+    expect(hourTicks.some((tick) => tick.date === "2026-01-02" && tick.hour === 23)).toBe(true);
   });
 
   it("genere les ticks et contextes calendaires adaptes au zoom", () => {

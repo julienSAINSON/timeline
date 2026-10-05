@@ -25,14 +25,14 @@ describe("generateTimelineFromTemplate", () => {
     const result = generateTimelineFromTemplate(agileTemplate, "2026-10-05");
 
     expect(result.start_date).toBe("2026-10-05");
-    expect(result.end_date).toBe("2026-11-15");
+    expect(result.end_date).toBe("2026-11-13");
     expect(result.items.filter(({ label }) => label === "Build").every(({ color, render_mode }) => color === "green" && render_mode === "rectangle")).toBe(true);
     expect(result.items.filter(({ type }) => type === "period").map(({ start_date, end_date }) => [start_date, end_date])).toEqual([
-      ["2026-10-05", "2026-10-18"],
+      ["2026-10-05", "2026-10-16"],
       ["2026-10-05", "2026-10-09"],
-      ["2026-10-19", "2026-11-01"],
+      ["2026-10-19", "2026-10-30"],
       ["2026-10-19", "2026-10-23"],
-      ["2026-11-02", "2026-11-15"],
+      ["2026-11-02", "2026-11-13"],
       ["2026-11-02", "2026-11-06"],
     ]);
   });
@@ -58,6 +58,16 @@ describe("generateTimelineFromTemplate", () => {
     const result = generateTimelineFromTemplate(template, "2026-11-29");
 
     expect(result.items.find(({ label }) => label === "Cloture").start_date).toBe("2026-12-11");
+  });
+
+  it("ne fait pas terminer une iteration avant son debut si elle ne contient aucun jour ouvre", () => {
+    const template = { iterationDurationDays: 1, numberOfIterations: 1, periods: [], milestones: [] };
+
+    const result = generateTimelineFromTemplate(template, "2026-10-10");
+
+    expect(result.items[0].start_date).toBe("2026-10-10");
+    expect(result.items[0].end_date).toBe("2026-10-10");
+    expect(result.end_date).toBe("2026-10-10");
   });
 
   it("traverse les mois et les annees sans modifier le modele", () => {
