@@ -25,6 +25,14 @@ describe("timeline-scale", () => {
     expect(getScaleMode(72).unit).toBe("hour");
   });
 
+  it("affiche l'initiale du jour lorsque le zoom journalier est eleve", () => {
+    const highZoomTicks = generateTicks(createScale({ start_date: "2026-01-01", end_date: "2026-01-02" }, 32));
+    const lowerZoomTicks = generateTicks(createScale({ start_date: "2026-01-01", end_date: "2026-01-02" }, 30));
+
+    expect(formatTick(highZoomTicks.find((tick) => tick.date === "2026-01-01"))).toBe("J 1");
+    expect(formatTick(lowerZoomTicks.find((tick) => tick.date === "2026-01-01"))).toBe("1");
+  });
+
   it("passe du maximum journalier au zoom horaire, puis revient au jour", () => {
     expect(zoomIn(33, 1)).toBe(34);
     expect(zoomIn(34)).toBe(72);

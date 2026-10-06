@@ -48,7 +48,7 @@ export function xToDate(x, scale) {
 
 export function getScaleMode(pixelsPerDay) {
   if (pixelsPerDay >= MIN_HOUR_ZOOM) return { unit: "hour", step: 1 };
-  if (pixelsPerDay >= 26) return { unit: "day", step: 1 };
+  if (pixelsPerDay >= 26) return { unit: "day", step: 1, showWeekday: pixelsPerDay >= 32 };
   if (pixelsPerDay >= 10) return { unit: "week", step: 1 };
   if (pixelsPerDay >= 3) return { unit: "month", step: 1 };
   return { unit: "quarter", step: 1 };
@@ -99,6 +99,7 @@ export function generateTicks(scale) {
         date: formatDate(cursor),
         x: dateToX(cursor, scale),
         mode: mode.unit,
+        showWeekday: mode.showWeekday,
         isWeekend: mode.unit === "day" && (cursor.getDay() === 0 || cursor.getDay() === 6),
       });
     }
@@ -149,7 +150,12 @@ export function generateCalendarContext(scale) {
 export function formatTick(tick) {
   const date = parseDate(tick.date);
   if (tick.mode === "hour") return `${String(tick.hour).padStart(2, "0")}h`;
-  if (tick.mode === "day") return String(date.getDate());
+  if (tick.mode === "day") {
+    const dayNumber = String(date.getDate());
+    if (!tick.showWeekday) return dayNumber;
+    const weekdayInitials = ["D", "L", "M", "M", "J", "V", "S"];
+    return `${weekdayInitials[date.getDay()]} ${dayNumber}`;
+  }
   if (tick.mode === "week") return `S${getIsoWeek(date)}`;
   if (tick.mode === "quarter") return `T${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`;
   return new Intl.DateTimeFormat("fr-FR", { month: "short", year: "numeric" }).format(date);
